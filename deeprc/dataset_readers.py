@@ -150,19 +150,19 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
     # Convert dataset to hdf5 container if no hdf5 container was specifies
     #
     try:
-        with h5py.File(repertoiresdata_path, 'r') as hf:
+        with h5py.File(f"{repertoiresdata_path}.hdf5", 'r') as hf:
             n_repertoires = hf['metadata']['n_samples'][()]
-        hdf5_file = repertoiresdata_path
+        hdf5_file = f"{repertoiresdata_path}.hdf5"
     except Exception:
         # Convert to hdf5 container if no hdf5 container was given
         hdf5_file = repertoiresdata_path + ".hdf5"
-        user_input = None
-        while user_input != 'y':
-            user_input = input(f"Path {repertoiresdata_path} is not a hdf container. "
-                               f"Should I create an hdf5 container {hdf5_file}? (y/n)")
-            if user_input == 'n':
-                print("Process aborted by user")
-                exit()
+        # user_input = None
+        # while user_input != 'y':
+        #     user_input = input(f"Path {repertoiresdata_path} is not a hdf container. "
+        #                        f"Should I create an hdf5 container {hdf5_file}? (y/n)")
+        #     if user_input == 'n':
+        #         print("Process aborted by user")
+        #         exit()
         if verbose:
             print(f"Converting: {repertoiresdata_path}\n->\n{hdf5_file} @{n_worker_processes} processes")
         converter = DatasetToHDF5(
