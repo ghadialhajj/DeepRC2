@@ -74,8 +74,8 @@ task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
 # Get data loaders for training set and training-, validation-, and test-set in evaluation mode (=no random subsampling)
 trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
         task_definition=task_definition,
-        metadata_file="../datasets/example_dataset/metadata.tsv",
-        repertoiresdata_path="../datasets/example_dataset/repertoires",
+        metadata_file="/storage/ghadia/DeepRC2/deeprc/datasets/example_dataset/metadata.tsv",
+        repertoiresdata_path="/storage/ghadia/DeepRC2/deeprc/datasets/example_dataset/repertoires",
         metadata_file_id_column='ID',
         sequence_column='amino_acid',
         sequence_counts_column='templates',
