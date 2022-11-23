@@ -1,2 +1,0 @@
-exclude deeprc/datasets/splits_used_in_paper/*
-exclude deeprc/examples/*
