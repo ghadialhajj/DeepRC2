@@ -24,7 +24,7 @@ class DatasetToHDF5(object):
                  sequence_characters: tuple =
                  ('A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y'),
                  exclude_rows: tuple = (), include_rows: dict = (),  h5py_dict: dict = None,
-                 verbose: bool = True):
+                 sequence_labels_column: str = 'label', verbose: bool = True):
         """Converts dataset consisting of multiple `.tsv`/`.csv` repertoire files to optimized hdf5 container
         
         Converts dataset consisting of multiple `.tsv`/`.csv` repertoire files to optimized hdf5 container.
@@ -49,6 +49,9 @@ class DatasetToHDF5(object):
         sequence_counts_column : str
             The name of the column that includes the sequence counts;
             If None, all sequences will be assigned a count of 1;
+        sequence_labels_column : str
+            The name of the column that includes the sequence labels;
+            If None, all sequences will be assigned a label of 0;
         column_sep : str
             The column separator
         filename_extension : str
@@ -86,6 +89,7 @@ class DatasetToHDF5(object):
         self.repertoiresdata_directory = repertoiresdata_directory
         self.sequence_column = sequence_column
         self.sequence_counts_column = sequence_counts_column
+        self.sequence_labels_column = sequence_labels_column
         self.col_sep = column_sep
         self.filename_extension = filename_extension
         self.exclude_rows = exclude_rows
@@ -161,7 +165,18 @@ class DatasetToHDF5(object):
                     self._vprint(f"Warning: template count of < 1 found in sample {filename} -> changed to 1!")
                     sys.stdout.flush()
                     counts_per_sequence[counts_per_sequence < 0] = 1
-            
+
+            # Get sequence counts
+            if self.sequence_labels_column is None:
+                label_per_sequence = np.zeros_like(repertoire_data[self.sequence_column].values, dtype=np.int)
+            else:
+                try:
+                    label_per_sequence = np.asarray(repertoire_data[self.sequence_labels_column].values, dtype=np.int)
+                except ValueError:
+                    label_per_sequence = repertoire_data[self.sequence_labels_column].values
+                    label_per_sequence = np.asarray(label_per_sequence, dtype=np.int)
+
+
             seq_lens = np.array([len(sequence) for sequence in repertoire_data[self.sequence_column]], dtype=np.int)
             n_sequences = len(repertoire_data)
             
@@ -172,7 +187,7 @@ class DatasetToHDF5(object):
         except Exception as e:
             print(f"Failure in file {filename}")
             raise e
-        return counts_per_sequence, seq_lens, min_seq_len, max_seq_len, avg_seq_len, n_sequences
+        return counts_per_sequence, label_per_sequence, seq_lens, min_seq_len, max_seq_len, avg_seq_len, n_sequences
     
     def _read_aa_sequence(self, filename):
         """Read sequences of repertoire file and convert to numpy int8 array"""
@@ -226,9 +241,10 @@ class DatasetToHDF5(object):
                                              total=len(self.repertoire_files)):
                     samples_infos.append(worker_rets)
             
-            (counts_per_sequence, seq_lens, min_seq_len, max_seq_len, avg_seq_len,
+            (counts_per_sequence, label_per_sequence, seq_lens, min_seq_len, max_seq_len, avg_seq_len,
              n_sequences_per_sample) = zip(*samples_infos)
             counts_per_sequence = np.concatenate(counts_per_sequence, axis=0)
+            label_per_sequence = np.concatenate(label_per_sequence, axis=0)
             seq_lens = np.concatenate(seq_lens, axis=0)
             sample_min_seq_len = np.asarray(min_seq_len, dtype=np.int)
             sample_max_seq_len = np.asarray(max_seq_len, dtype=np.int)
@@ -265,6 +281,7 @@ class DatasetToHDF5(object):
             group.create_dataset('sample_avg_seq_len', data=sample_avg_seq_len, **self.h5py_dict)
             group.create_dataset('n_sequences_per_sample', data=n_sequences_per_sample, **self.h5py_dict)
             group.create_dataset('sequence_counts', data=counts_per_sequence, **self.h5py_dict)
+            group.create_dataset('sequence_labels', data=label_per_sequence, **self.h5py_dict)
             group.create_dataset('sequences', data=amino_acid_sequences, dtype=np.int8, **self.h5py_dict)
             metadata_group = hf.create_group('metadata')
             metadata_group.create_dataset('sample_keys', data=np.array(self.sample_keys, dtype=object),
