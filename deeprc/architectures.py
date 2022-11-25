@@ -391,7 +391,7 @@ class DeepRC(nn.Module):
 
         return mb_targets, mb_reduced_inputs, mb_reduced_sequence_lengths, mb_reduced_sequence_labels, mb_n_sequences
 
-    def forward(self, inputs_flat, sequence_lengths_flat, n_sequences_per_bag):
+    def forward(self, inputs_flat, sequence_lengths_flat, sequence_labels_flat, n_sequences_per_bag):
         """ Apply DeepRC (see Fig.2 in paper)
         
         Parameters
@@ -402,6 +402,9 @@ class DeepRC(nn.Module):
         sequence_lengths_flat: torch.Tensor
             Sequence lengths
             (n_samples*n_sequences_per_bag, 1)
+        sequence_labels_flat: torch.Tensor
+            Sequence labels
+            (n_samples*n_sequences_per_bag, 1)            
         n_sequences_per_bag: torch.Tensor
             Number of sequences per bag as tensor of dtype torch.long and shape (n_samples,)
         
