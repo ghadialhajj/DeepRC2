@@ -216,7 +216,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     if update % log_training_stats_at == 0:
                         tb_group = 'training/'
                         # Loop through tasks and add losses to tensorboard
-                        pred_losses = task_definition.get_losses(raw_outputs=logit_outputs, targets=labels)
+                        pred_losses = task_definition.get_losses(raw_outputs=logit_outputs, targets=targets)
                         pred_losses = pred_losses.mean(dim=1)  # shape: (n_tasks, n_samples, 1) -> (n_tasks, 1)
                         for task_id, task_loss in zip(task_definition.get_task_ids(), pred_losses):
                             writer.add_scalar(tag=tb_group + f'{task_id}_loss', scalar_value=task_loss,
