@@ -55,7 +55,7 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
 
             # Compute predictions from reduced sequences
             raw_outputs = model(inputs_flat=inputs, sequence_lengths_flat=sequence_lengths,
-                                n_sequences_per_bag=n_sequences)
+                                sequence_labels_flat=sequence_labels, n_sequences_per_bag=n_sequences)
 
             # Store predictions and labels
             all_raw_outputs.append(raw_outputs.detach())
@@ -196,7 +196,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
                     # Calculate predictions from reduced sequences,
                     logit_outputs = model(inputs_flat=inputs, sequence_lengths_flat=sequence_lengths,
-                                          n_sequences_per_bag=n_sequences)
+                                          sequence_labels_flat=sequence_labels, n_sequences_per_bag=n_sequences)
 
                     # Calculate losses
                     pred_loss = task_definition.get_loss(raw_outputs=logit_outputs, targets=targets,

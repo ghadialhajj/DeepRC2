@@ -254,7 +254,7 @@ class DeepRC(nn.Module):
                  sequence_embedding_as_16_bit: bool = True,
                  consider_seq_counts: bool = False, add_positional_information: bool = True,
                  sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
-                 device: torch.device = torch.device('cuda:0')):
+                 device: torch.device = torch.device('cuda:0'), ideal: bool = True):
         """DeepRC network as described in paper
         
         Apply `.reduce_and_stack_minibatch()` to reduce number of sequences by `sequence_reduction_fraction`
@@ -294,6 +294,9 @@ class DeepRC(nn.Module):
              the attention weights.
         device : torch.device
             Device to perform computations on
+        ideal : bool
+            If True, the model will use att_weights=1 for positive sequences and att_weights=0 for negative sequences.
+            Otherwise, attention weights will be computed using the attention network.
         """
         super(DeepRC, self).__init__()
         self.n_input_features = n_input_features
@@ -303,6 +306,7 @@ class DeepRC(nn.Module):
         self.add_positional_information = add_positional_information
         self.sequence_reduction_fraction = sequence_reduction_fraction
         self.reduction_mb_size = int(reduction_mb_size)
+        self.ideal = ideal
 
         # sequence embedding network (h())
         if sequence_embedding_as_16_bit:
@@ -391,7 +395,7 @@ class DeepRC(nn.Module):
 
         return mb_targets, mb_reduced_inputs, mb_reduced_sequence_lengths, mb_reduced_sequence_labels, mb_n_sequences
 
-    def forward(self, inputs_flat, sequence_lengths_flat, n_sequences_per_bag):
+    def forward(self, inputs_flat, sequence_lengths_flat, sequence_labels_flat, n_sequences_per_bag):
         """ Apply DeepRC (see Fig.2 in paper)
         
         Parameters
@@ -401,6 +405,9 @@ class DeepRC(nn.Module):
             (n_samples*n_sequences_per_bag, n_sequence_positions, n_input_features)
         sequence_lengths_flat: torch.Tensor
             Sequence lengths
+            (n_samples*n_sequences_per_bag, 1)
+        sequence_labels_flat: torch.Tensor
+            Sequence labels
             (n_samples*n_sequences_per_bag, 1)
         n_sequences_per_bag: torch.Tensor
             Number of sequences per bag as tensor of dtype torch.long and shape (n_samples,)
@@ -415,7 +422,10 @@ class DeepRC(nn.Module):
                                               sequence_lengths=sequence_lengths_flat).to(dtype=torch.float32)
 
         # Calculate attention weights f() before softmax function for all bags in mb (shape: (d_k, 1))
-        mb_attention_weights = self.attention_nn(mb_emb_seqs)
+        if self.ideal:
+            mb_attention_weights = sequence_labels_flat.reshape(-1, 1)
+        else:
+            mb_attention_weights = self.attention_nn(mb_emb_seqs)
 
         # Compute representation per bag (N times shape (d_v,))
         mb_emb_seqs_after_attention = []
@@ -518,6 +528,10 @@ class DeepRC(nn.Module):
                 inputs_mb = inputs[mb_i * self.reduction_mb_size:(mb_i + 1) * self.reduction_mb_size].to(
                     device=self.device,
                     dtype=self.embedding_dtype)
+                sequence_labels_mb = sequence_labels[
+                                      mb_i * self.reduction_mb_size:(mb_i + 1) * self.reduction_mb_size].to(
+                    device=self.device, dtype=torch.long)
+
                 sequence_lengths_mb = sequence_lengths[
                                       mb_i * self.reduction_mb_size:(mb_i + 1) * self.reduction_mb_size].to(
                     device=self.device, dtype=torch.long)
@@ -527,7 +541,10 @@ class DeepRC(nn.Module):
                     dtype=torch.float32)
 
                 # Calculate attention weights before softmax (f())
-                attention_acts.append(self.attention_nn(emb_seqs).squeeze(dim=-1))
+                if self.ideal:
+                    attention_acts.append(sequence_labels_mb)
+                else:
+                    attention_acts.append(self.attention_nn(emb_seqs).squeeze(dim=-1))
 
             # Concatenate attention weights for all sequences
             attention_acts = torch.cat(attention_acts, dim=0)
