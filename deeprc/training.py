@@ -48,12 +48,12 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
         for scoring_data in tqdm(dataloader, total=len(dataloader), desc="Evaluating model", disable=not show_progress):
             
             # Get samples as lists
-            targets, inputs, sequence_lengths, counts_per_sequence, sample_ids = scoring_data
-            
+            targets, inputs, sequence_lengths, counts_per_sequence, label_per_sequence, sample_ids = scoring_data
+
             # Apply attention-based sequence reduction and create minibatch
-            targets, inputs, sequence_lengths, n_sequences = model.reduce_and_stack_minibatch(
-                    targets, inputs, sequence_lengths, counts_per_sequence)
-            
+            targets, inputs, sequence_lengths, sequence_labels, n_sequences = model.reduce_and_stack_minibatch(
+                    targets, inputs, sequence_lengths, counts_per_sequence, label_per_sequence)
+
             # Compute predictions from reduced sequences
             raw_outputs = model(inputs_flat=inputs, sequence_lengths_flat=sequence_lengths,
                                 n_sequences_per_bag=n_sequences)
@@ -185,12 +185,12 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
             while update < n_updates:
                 for data in trainingset_dataloader:
                     # Get samples as lists
-                    labels, inputs, sequence_lengths, counts_per_sequence, sample_ids = data
-                    
+                    labels, inputs, sequence_lengths, counts_per_sequence, label_per_sequence, sample_ids = data
+
                     # Apply attention-based sequence reduction and create minibatch
                     with torch.no_grad():
-                        labels, inputs, sequence_lengths, n_sequences = model.reduce_and_stack_minibatch(
-                                labels, inputs, sequence_lengths, counts_per_sequence)
+                        labels, inputs, sequence_lengths, sequence_labels, n_sequences = model.reduce_and_stack_minibatch(
+                                labels, inputs, sequence_lengths, counts_per_sequence, label_per_sequence)
                     
                     # Reset gradients
                     optimizer.zero_grad()

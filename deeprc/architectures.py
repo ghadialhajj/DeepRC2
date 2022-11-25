@@ -322,7 +322,7 @@ class DeepRC(nn.Module):
         position_features = compute_position_features(max_seq_len=max_seq_len, sequence_lengths=np.arange(max_seq_len+1))
         self.position_features = torch.from_numpy(position_features).to(device=device, dtype=self.embedding_dtype).detach()
     
-    def reduce_and_stack_minibatch(self, targets, sequences_of_indices, sequence_lengths, sequence_counts):
+    def reduce_and_stack_minibatch(self, targets, sequences_of_indices, sequence_lengths, sequence_counts, sequence_labels):
         """ Apply attention-based reduction of number of sequences per bag and stacked/concatenated bags to minibatch.
         
         Reduces sequences per bag `d_k` to top `d_k*sequence_reduction_fraction` important sequences,
@@ -338,6 +338,8 @@ class DeepRC(nn.Module):
             AA indices of bags as list of int8 tensors of shape (n_sequences, n_sequence_positions) = (d_k, d_l)
         sequence_lengths: list of torch.Tensor
             Sequences lengths of bags as tensors of dtype torch.long and shape (n_sequences,) = (d_k,)
+        sequence_labels: list of torch.Tensor
+            Sequences labels of bags as tensors of dtype torch.long and shape (n_sequences,) = (d_k,)
         sequence_counts: list of torch.Tensor
             Sequences counts per bag as tensors of shape (n_sequences,) = (d_k,).
             The sequences counts are the log(max(counts, 1)).
@@ -362,27 +364,29 @@ class DeepRC(nn.Module):
             sequences_of_indices = [t.to(self.device) for t in sequences_of_indices]
             max_mb_seq_len = max(t.max() for t in sequence_lengths)
             sequence_lengths = [t.to(self.device) for t in sequence_lengths]
-            
+            sequence_labels = [t.to(self.device) for t in sequence_labels]
+
             # Compute features (turn into 1-hot sequences and add position features)
             inputs_list = [self.__compute_features__(sequence_of_indices, sequence_lengths, max_mb_seq_len, counts_per_sequence)
                            for sequence_of_indices, sequence_lengths, counts_per_sequence
                            in zip(sequences_of_indices, sequence_lengths, sequence_counts)]
             
             # Reduce number of sequences (apply __reduce_sequences_for_bag__ separately to all bags in mb)
-            reduced_inputs, reduced_sequence_lengths = \
-                list(zip(*[self.__reduce_sequences_for_bag__(inp, sequence_lengths)
-                           for inp, sequence_lengths
-                           in zip(inputs_list, sequence_lengths)]))
+            reduced_inputs, reduced_sequence_lengths, reduced_sequence_labels = \
+                list(zip(*[self.__reduce_sequences_for_bag__(inp, sequence_lengths, sequence_labels)
+                           for inp, sequence_lengths, sequence_labels
+                           in zip(inputs_list, sequence_lengths, sequence_labels)]))
             
             # Stack bags in minibatch to tensor
             mb_targets = torch.stack(targets, dim=0).to(device=self.device)
             mb_reduced_sequence_lengths = torch.cat(reduced_sequence_lengths, dim=0)
+            mb_reduced_sequence_labels = torch.cat(reduced_sequence_labels, dim=0)
             mb_reduced_inputs = torch.cat(reduced_inputs, dim=0)
             mb_n_sequences = torch.tensor([len(rsl) for rsl in reduced_sequence_lengths], dtype=torch.long,
                                           device=self.device)
         
-        return mb_targets, mb_reduced_inputs, mb_reduced_sequence_lengths, mb_n_sequences
-    
+        return mb_targets, mb_reduced_inputs, mb_reduced_sequence_lengths, mb_reduced_sequence_labels, mb_n_sequences
+
     def forward(self, inputs_flat, sequence_lengths_flat, n_sequences_per_bag):
         """ Apply DeepRC (see Fig.2 in paper)
         
@@ -468,7 +472,7 @@ class DeepRC(nn.Module):
         features_one_hot_padded = features_one_hot_padded / features_one_hot_padded.std()
         return features_one_hot_padded
     
-    def __reduce_sequences_for_bag__(self, inputs, sequence_lengths):
+    def __reduce_sequences_for_bag__(self, inputs, sequence_lengths, sequence_labels):
         """ Reduces sequences to top `n_sequences*sequence_reduction_fraction` important sequences,
         sorted descending by importance based on attention weights.
         Reduction is performed using minibatches of `reduction_mb_size` sequences.
@@ -479,7 +483,9 @@ class DeepRC(nn.Module):
             Input of shape (n_sequences, n_input_features, n_sequence_positions) = (d_k, 20+3, d_l)
         sequence_lengths: torch.Tensor
             Sequences lengths as tensor of dtype torch.long and shape (n_sequences,) = (d_k,)
-        
+        sequence_labels: torch.Tensor
+            Sequences labels as tensor of dtype torch.long and shape (n_sequences,) = (d_k,)
+
         Returns
         ----------
         reduced_inputs: torch.Tensor
@@ -489,6 +495,9 @@ class DeepRC(nn.Module):
             where `n_reduced_sequences=n_sequences*sequence_reduction_fraction`
         reduced_sequence_lengths: torch.Tensor
             Sequences lengths of `reduced_inputs` as tensor of dtype torch.long and shape (n_reduced_sequences,),
+            where `n_reduced_sequences=n_sequences*sequence_reduction_fraction`
+        reduced_sequence_labels: torch.Tensor
+            Sequences labels of `reduced_inputs` as tensor of dtype torch.long and shape (n_reduced_sequences,),
             where `n_reduced_sequences=n_sequences*sequence_reduction_fraction`
         """
         if self.sequence_reduction_fraction <= 1.0:
@@ -525,9 +534,13 @@ class DeepRC(nn.Module):
             reduced_sequence_lengths = \
                 sequence_lengths[used_sequences.to(device=self.device)].detach().to(device=self.device,
                                                                                     dtype=self.embedding_dtype)
+            reduced_sequence_labels = \
+                sequence_labels[used_sequences.to(device=self.device)].detach().to(device=self.device,
+                                                                                    dtype=self.embedding_dtype)
         else:
             with torch.no_grad():
                 reduced_inputs = inputs.detach().to(device=self.device, dtype=self.embedding_dtype)
                 reduced_sequence_lengths = sequence_lengths.detach().to(device=self.device, dtype=self.embedding_dtype)
-        
-        return reduced_inputs, reduced_sequence_lengths
+                reduced_sequence_labels = sequence_labels.detach().to(device=self.device, dtype=self.embedding_dtype)
+
+        return reduced_inputs, reduced_sequence_lengths, reduced_sequence_labels

@@ -20,11 +20,11 @@ import multiprocessing
 
 class DatasetToHDF5(object):
     def __init__(self, repertoiresdata_directory: str, sequence_column: str = 'amino_acid',
-                 sequence_counts_column: str = 'templates', column_sep: str = '\t', filename_extension: str = '.tsv',
+                 sequence_counts_column: str = 'templates', sequence_labels_column: str = 'label',
+                 column_sep: str = '\t', filename_extension: str = '.tsv',
                  sequence_characters: tuple =
                  ('A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y'),
-                 exclude_rows: tuple = (), include_rows: dict = (),  h5py_dict: dict = None,
-                 sequence_labels_column: str = 'label', verbose: bool = True):
+                 exclude_rows: tuple = (), include_rows: dict = (), h5py_dict: dict = None, verbose: bool = True):
         """Converts dataset consisting of multiple `.tsv`/`.csv` repertoire files to optimized hdf5 container
         
         Converts dataset consisting of multiple `.tsv`/`.csv` repertoire files to optimized hdf5 container.
@@ -97,12 +97,12 @@ class DatasetToHDF5(object):
         self.h5py_dict = h5py_dict if h5py_dict is not None else dict(compression="gzip", compression_opts=4,
                                                                       chunks=True, shuffle=True)
         self.verbose = verbose
-        
+
         # Define AA characters
         self.aas = sequence_characters
         self.aa_ind_dict = OrderedDict(zip(self.aas, range(len(self.aas))))
         self.n_aa = len(self.aas)
-        
+
         # Search for repertoire files
         self._vprint(f"Searching for repertoire files in {self.repertoiresdata_directory}")
         self.repertoire_files = sorted(glob.glob(os.path.join(self.repertoiresdata_directory, "**",
@@ -111,16 +111,16 @@ class DatasetToHDF5(object):
         self.repertoire_files = [rf for rf in self.repertoire_files if not os.path.isdir(rf)]
         self.sample_keys = [os.path.basename(filename) for filename in self.repertoire_files]
         self.n_samples = len(self.sample_keys)
-        
+
         # Check if filenames are unique
         unique_keys, counts = np.unique(self.sample_keys, return_counts=True)
         if np.any(counts != 1):
             raise ValueError(f"Repertoire filenames must be unique but {unique_keys[counts != 1]} "
                              f"wer found {counts[counts != 1]} times")
         self._vprint(f"\tLocated {self.n_samples} repertoire files")
-        
+
         self.seq_lens = None
-        
+
     def filter_repertoire_sequences(self, repertoire_data: pd.DataFrame):
         """Filter repertoire sequences based on exclusion and inclusion criteria and valid sequence characters"""
         if len(self.exclude_rows) or len(self.include_rows):
@@ -133,22 +133,22 @@ class DatasetToHDF5(object):
             for excl_col, excl_val in self.exclude_rows:
                 rows_mask = np.logical_and(rows_mask, repertoire_data[excl_col].values != excl_val)
             repertoire_data = repertoire_data[rows_mask]
-        
+
         # Filter out entries with invalid characters
         sequences_str = repertoire_data[self.sequence_column].values
         repertoire_data = repertoire_data[[all([True if c in self.aas else False for c in str(seq)])
                                            for seq in sequences_str]]
         return repertoire_data
-    
+
     def _get_repertoire_sequence_lengths(self, filename):
         """Read repertoire file and determine the number of sequences and validity"""
         try:
             repertoire_data = pd.read_csv(filename, sep=self.col_sep, index_col=False,
                                           keep_default_na=False, header=0, low_memory=False)
-            
+
             # Filter out invalid or excluded/not included sequences
             repertoire_data = self.filter_repertoire_sequences(repertoire_data)
-            
+
             # Get sequence counts
             if self.sequence_counts_column is None:
                 counts_per_sequence = np.ones_like(repertoire_data[self.sequence_column].values, dtype=np.int)
@@ -159,7 +159,7 @@ class DatasetToHDF5(object):
                     counts_per_sequence = repertoire_data[self.sequence_counts_column].values
                     counts_per_sequence[counts_per_sequence == 'null'] = 0
                     counts_per_sequence = np.asarray(counts_per_sequence, dtype=np.int)
-                
+
                 # Set sequence counts < 1 to 1
                 if counts_per_sequence.min() < 1:
                     self._vprint(f"Warning: template count of < 1 found in sample {filename} -> changed to 1!")
@@ -176,10 +176,9 @@ class DatasetToHDF5(object):
                     label_per_sequence = repertoire_data[self.sequence_labels_column].values
                     label_per_sequence = np.asarray(label_per_sequence, dtype=np.int)
 
-
             seq_lens = np.array([len(sequence) for sequence in repertoire_data[self.sequence_column]], dtype=np.int)
             n_sequences = len(repertoire_data)
-            
+
             # Calculate sequence length stats
             min_seq_len = seq_lens.min()
             max_seq_len = seq_lens.max()
@@ -188,7 +187,7 @@ class DatasetToHDF5(object):
             print(f"Failure in file {filename}")
             raise e
         return counts_per_sequence, label_per_sequence, seq_lens, min_seq_len, max_seq_len, avg_seq_len, n_sequences
-    
+
     def _read_aa_sequence(self, filename):
         """Read sequences of repertoire file and convert to numpy int8 array"""
         try:
@@ -197,12 +196,12 @@ class DatasetToHDF5(object):
 
             # Filter out invalid or excluded/not included sequences
             repertoire_data = self.filter_repertoire_sequences(repertoire_data)
-            
+
             # Get max. sequence length
             sequences_str = repertoire_data[self.sequence_column].values
             seq_lens = np.array([len(sequence) for sequence in sequences_str])
             max_seq_len = seq_lens.max()
-            
+
             # Convert AA strings to numpy int8 array (padded with -1)
             amino_acid_sequences = np.full(shape=(len(sequences_str), max_seq_len), dtype=np.int8, fill_value=-1)
             for i, sequence_str in enumerate(sequences_str):
@@ -211,7 +210,7 @@ class DatasetToHDF5(object):
             print(f"\n\n\nFailure in file {filename}\n\n\n")
             raise e
         return amino_acid_sequences
-    
+
     def save_data_to_file(self, output_file: str, n_workers: int = 50, large_repertoires: bool = False):
         """ Read repertoire files and convert dataset to hdf5 container
          
@@ -231,7 +230,7 @@ class DatasetToHDF5(object):
         """
         self._vprint(f"Saving dataset to {output_file}...")
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        
+
         with h5py.File(output_file, 'w') as hf:
             # Get number of sequences and check validity
             with multiprocessing.Pool(processes=n_workers) as pool:
@@ -240,7 +239,7 @@ class DatasetToHDF5(object):
                                              desc='Getting n_sequences per repertoire',
                                              total=len(self.repertoire_files)):
                     samples_infos.append(worker_rets)
-            
+
             (counts_per_sequence, label_per_sequence, seq_lens, min_seq_len, max_seq_len, avg_seq_len,
              n_sequences_per_sample) = zip(*samples_infos)
             counts_per_sequence = np.concatenate(counts_per_sequence, axis=0)
@@ -255,11 +254,11 @@ class DatasetToHDF5(object):
             sample_sequences_start_end[1:, 0] = sample_sequences_start_end[:-1, 1]
             sample_sequences_start_end[0, 0] = 0
             self.seq_lens = seq_lens
-            
+
             # Get AA sequences and store in one pre-allocated numpy int8 array (padding with -1)
             amino_acid_sequences = np.full(shape=(n_sequences_per_sample.sum(), sample_max_seq_len.max()),
                                            dtype=np.int8, fill_value=-1)
-            
+
             with multiprocessing.Pool(processes=n_workers) as pool:
                 if large_repertoires:
                     mapping_function = map
@@ -271,7 +270,7 @@ class DatasetToHDF5(object):
                     sample_seqs = slice(sample_sequences_start_end[sample_i, 0],
                                         sample_sequences_start_end[sample_i, 1])
                     amino_acid_sequences[sample_seqs, :amino_acid_sequence_sample.shape[1]] = amino_acid_sequence_sample
-            
+
             # Store in hdf5 container
             group = hf.create_group('sampledata')
             group.create_dataset('seq_lens', data=seq_lens, **self.h5py_dict)
@@ -289,13 +288,13 @@ class DatasetToHDF5(object):
             metadata_group.create_dataset('n_samples', data=self.n_samples)
             metadata_group.create_dataset('aas', data=''.join(self.aas))
             metadata_group.create_dataset('stats', data=self._get_stats())
-        
+
         # Create a small log-file with information about the dataset
         with open(output_file + 'info', 'w') as lf:
             print(f"Input: {self.repertoiresdata_directory}", file=lf)
             print(f"Output: {output_file}", file=lf)
             print(f"{self._get_stats()}\n", file=lf)
-    
+
     def _get_stats(self):
         """Get full dataset stats as string"""
         stat_str = []
@@ -307,7 +306,7 @@ class DatasetToHDF5(object):
             stat_str += [f"aa_ind_dict={self.aa_ind_dict}"]
         stat_str = '\n'.join(stat_str)
         return stat_str
-    
+
     def _vprint(self, *args, **kwargs):
         if self.verbose:
             print(*args, **kwargs)
