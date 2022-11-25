@@ -9,10 +9,10 @@ import os
 import datetime
 import numpy as np
 import torch
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from widis_lstm_tools.utils.collection import TeePrint, SaverLoader, close_all
 from deeprc.task_definitions import TaskDefinition
+import wandb
 
 
 def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, task_definition: TaskDefinition,
@@ -139,9 +139,6 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
     tensorboarddir = os.path.join(results_directory, 'tensorboard')
     os.makedirs(tensorboarddir, exist_ok=True)
 
-    # Prepare tensorboard writer
-    writer = SummaryWriter(log_dir=tensorboarddir)
-
     # Print all outputs to logfile and terminal
     tee_print = TeePrint(logfile)
     tprint = tee_print.tee_print
@@ -195,8 +192,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     optimizer.zero_grad()
 
                     # Calculate predictions from reduced sequences,
-            raw_outputs = model(inputs_flat=inputs, sequence_lengths_flat=sequence_lengths,
-                                sequence_labels_flat=sequence_labels, n_sequences_per_bag=n_sequences)
+                    logit_outputs = model(inputs_flat=inputs, sequence_lengths_flat=sequence_lengths,
+                                          sequence_labels_flat=sequence_labels, n_sequences_per_bag=n_sequences)
 
                     # Calculate losses
                     pred_loss = task_definition.get_loss(raw_outputs=logit_outputs, targets=targets,
@@ -219,12 +216,11 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         pred_losses = task_definition.get_losses(raw_outputs=logit_outputs, targets=targets)
                         pred_losses = pred_losses.mean(dim=1)  # shape: (n_tasks, n_samples, 1) -> (n_tasks, 1)
                         for task_id, task_loss in zip(task_definition.get_task_ids(), pred_losses):
-                            writer.add_scalar(tag=tb_group + f'{task_id}_loss', scalar_value=task_loss,
-                                              global_step=update)
-                        writer.add_scalar(tag=tb_group + 'total_task_loss', scalar_value=pred_loss, global_step=update)
-                        writer.add_scalar(tag=tb_group + 'l1reg_loss', scalar_value=l1reg_loss, global_step=update)
-                        writer.add_scalar(tag=tb_group + 'total_loss', scalar_value=loss, global_step=update)
-                        writer.add_histogram(tag=tb_group + 'logit_outputs', values=logit_outputs, global_step=update)
+                            wandb.log({f"{tb_group}{task_id}_loss": task_loss}, step=update)
+                        wandb.log({f"{tb_group}total_task_loss": pred_loss}, step=update)
+                        wandb.log({f"{tb_group}l1reg_loss": l1reg_loss}, step=update)
+                        wandb.log({f"{tb_group}total_loss": loss}, step=update)
+                        wandb.log({f"{tb_group}logit_outputs": logit_outputs}, step=update)
 
                     # Calculate scores and loss on training set and validation set
                     if update % evaluate_at == 0 or update == n_updates or update == 1:
@@ -236,8 +232,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
                         tb_group = 'training_inference/'
                         for task_id, task_scores in scores.items():
-                            [writer.add_scalar(tag=tb_group + f'{task_id}/{score_name}', scalar_value=score,
-                                               global_step=update)
+                            [wandb.log({f"{tb_group}{task_id}/{score_name}": score}, step=update)
                              for score_name, score in task_scores.items()]
 
                         print("  Calculating validation score...")
@@ -250,8 +245,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
                         tb_group = 'validation/'
                         for task_id, task_scores in scores.items():
-                            [writer.add_scalar(tag=tb_group + f'{task_id}/{score_name}', scalar_value=score,
-                                               global_step=update)
+                            [wandb.log({f"{tb_group}{task_id}/{score_name}": score}, step=update)
                              for score_name, score in task_scores.items()]
 
                         # If we have a new best loss on the validation set, we save the model as new best model
