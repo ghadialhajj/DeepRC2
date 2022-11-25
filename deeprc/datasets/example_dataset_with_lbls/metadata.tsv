@@ -1,0 +1,11 @@
+ID	binary_target_1	binary_target_2	regression_target_1	regression_target_2	multiclass_target_1	multiclass_target_2
+rep_00001.tsv	+	False	134.336429512261	0.331569804187778	class_c	type_1
+rep_00002.tsv	+	False	265.202551340323	0.631769400450612	class_a	type_2
+rep_00003.tsv	+	False	96.055219174943	0.39843171318919	class_c	type_1
+rep_00004.tsv	-	False	449.470981142482	0.624010970129253	class_c	type_1
+rep_00005.tsv	-	True	165.741926584393	0.496430032096725	class_b	type_1
+rep_00006.tsv	+	False	134.336429512261	0.331569804187778	class_c	type_1
+rep_00007.tsv	+	False	265.202551340323	0.631769400450612	class_a	type_2
+rep_00008.tsv	+	False	96.055219174943	0.39843171318919	class_c	type_1
+rep_00009.tsv	-	False	449.470981142482	0.624010970129253	class_c	type_1
+rep_00010.tsv	-	True	165.741926584393	0.496430032096725	class_b	type_1
