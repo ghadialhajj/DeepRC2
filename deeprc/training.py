@@ -6,7 +6,6 @@ Author -- Michael Widrich
 Contact -- widrich@ml.jku.at
 """
 import os
-import datetime
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -128,16 +127,12 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
          If True, missing target values will be ignored for training. This can be useful if auxiliary tasks are not
          available for all samples but might increase the computation time per update.
     """
-    # Append current timestamp to results directory
-    results_directory = os.path.join(results_directory, datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))
     os.makedirs(results_directory, exist_ok=True)
 
     # Read config file and set up results folder
     logfile = os.path.join(results_directory, 'log.txt')
     checkpointdir = os.path.join(results_directory, 'checkpoint')
     os.makedirs(checkpointdir, exist_ok=True)
-    tensorboarddir = os.path.join(results_directory, 'tensorboard')
-    os.makedirs(tensorboarddir, exist_ok=True)
 
     # Print all outputs to logfile and terminal
     tee_print = TeePrint(logfile)
