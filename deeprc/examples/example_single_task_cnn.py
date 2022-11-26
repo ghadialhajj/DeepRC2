@@ -15,7 +15,9 @@ from deeprc.task_definitions import TaskDefinition, BinaryTarget, MulticlassTarg
 from deeprc.dataset_readers import make_dataloaders, no_sequence_count_scaling
 from deeprc.architectures import DeepRC, SequenceEmbeddingCNN, AttentionNetwork, OutputNetwork
 from deeprc.training import train, evaluate
-
+import wandb
+import os
+import datetime
 
 #
 # Get command line arguments
@@ -54,43 +56,58 @@ device = torch.device(args.device)
 torch.manual_seed(args.rnd_seed)
 np.random.seed(args.rnd_seed)
 
+# config = {"n_updates": int(1e3), "evaluate_at": int(1e2), "kernel_size": 9, "n_kernels": 32,
+#           "sample_n_sequences": int(1e4), "device": "cuda:0", "rnd_seed": 0}
 
+wandb.init(project="DeepRC", group="ideal")
+wandb.config.update(args)
+
+root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
+results_dir = "/results/singletask_cnn"
+dataset = "example_dataset_with_labels"
+
+# Append current timestamp to results directory
+results_dir = os.path.join(f"{results_dir}_{dataset}", datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))
+
+
+config = {"dataset": "example_dataset_with_labels", "sequence_reduction_fraction": 1,
+          "reduction_mb_size": int(5e3), "results_dir": results_dir}
+
+wandb.config.update(config)
 #
 # Create Task definitions
 #
 # Assume we want to train on 1 main task as binary task at column 'binary_target_1' of our metadata file.
 task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
     BinaryTarget(  # Add binary classification task with sigmoid output function
-            column_name='binary_target_1',  # Column name of task in metadata file
-            true_class_value='+',  # Entries with value '+' will be positive class, others will be negative class
-            pos_weight=1.,  # We can up- or down-weight the positive class if the classes are imbalanced
+        column_name='binary_target_1',  # Column name of task in metadata file
+        true_class_value='+',  # Entries with value '+' will be positive class, others will be negative class
+        pos_weight=1.,  # We can up- or down-weight the positive class if the classes are imbalanced
     ),
 ]).to(device=device)
-
 
 #
 # Get dataset
 #
 # Get data loaders for training set and training-, validation-, and test-set in evaluation mode (=no random subsampling)
 trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
-        task_definition=task_definition,
-        # metadata_file="/storage/ghadia/DeepRC2/deeprc/datasets/example_dataset/metadata.tsv",
-        # repertoiresdata_path="/storage/ghadia/DeepRC2/deeprc/datasets/example_dataset/repertoires",
-        metadata_file="/home/ghadi/PycharmProjects/DeepRC2/deeprc/datasets/example_dataset_with_lbls/metadata.tsv",
-        repertoiresdata_path="/home/ghadi/PycharmProjects/DeepRC2/deeprc/datasets/example_dataset_with_lbls/repertoires",
-        metadata_file_id_column='ID',
-        sequence_column='amino_acid',
-        sequence_counts_column='templates',
-        sample_n_sequences=args.sample_n_sequences,
-        sequence_counts_scaling_fn=no_sequence_count_scaling  # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
+    task_definition=task_definition,
+    metadata_file=f"{root_dir}/datasets/{config['dataset']}/metadata.tsv",
+    repertoiresdata_path=f"{root_dir}/datasets/{config['dataset']}/repertoires",
+    metadata_file_id_column='ID',
+    sequence_column='amino_acid',
+    sequence_counts_column='templates',
+    sequence_labels_column='label',
+    sample_n_sequences=args.sample_n_sequences,
+    sequence_counts_scaling_fn=no_sequence_count_scaling
+    # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
 )
-
 
 #
 # Create DeepRC Network
 #
 # Create sequence embedding network (for CNN, kernel_size and n_kernels are important hyper-parameters)
-sequence_embedding_network = SequenceEmbeddingCNN(n_input_features=20+3, kernel_size=args.kernel_size,
+sequence_embedding_network = SequenceEmbeddingCNN(n_input_features=20 + 3, kernel_size=args.kernel_size,
                                                   n_kernels=args.n_kernels, n_layers=1)
 # Create attention network
 attention_network = AttentionNetwork(n_input_features=args.n_kernels, n_layers=2, n_units=32)
@@ -102,9 +119,8 @@ model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_net
                attention_network=attention_network,
                output_network=output_network,
                consider_seq_counts=False, n_input_features=20, add_positional_information=True,
-               sequence_reduction_fraction=0.1, reduction_mb_size=int(5e4),
-               device=device).to(device=device)
-
+               sequence_reduction_fraction=config["sequence_reduction_fraction"],
+               reduction_mb_size=config["reduction_mb_size"], device=device).to(device=device)
 
 #
 # Train DeepRC model
@@ -113,7 +129,7 @@ train(model, task_definition=task_definition, trainingset_dataloader=trainingset
       trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
       early_stopping_target_id='binary_target_1',  # Get model that performs best for this task
       validationset_eval_dataloader=validationset_eval, n_updates=args.n_updates, evaluate_at=args.evaluate_at,
-      device=device, results_directory="results/singletask_cnn"  # Here our results and trained models will be stored
+      device=device, results_directory=f"{root_dir}{results_dir}"  # Here our results and trained models will be stored
       )
 # You can use "tensorboard --logdir [results_directory] --port=6060" and open "http://localhost:6060/" in your
 # web-browser to view the progress
@@ -123,4 +139,5 @@ train(model, task_definition=task_definition, trainingset_dataloader=trainingset
 # Evaluate trained model on testset
 #
 scores = evaluate(model=model, dataloader=testset_eval, task_definition=task_definition, device=device)
+wandb.run.summary.update(scores["binary_target_1"])
 print(f"Test scores:\n{scores}")
