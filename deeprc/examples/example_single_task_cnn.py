@@ -42,37 +42,43 @@ parser.add_argument('--sample_n_sequences', help='Number of instances to reduce 
                     type=int, default=int(1e4))
 parser.add_argument('--learning_rate', help='Learning rate of DeepRC using Adam optimizer. Default: 1e-4',
                     type=float, default=1e-4)
-parser.add_argument('--device', help='Device to use for NN computations, as passed to `torch.device()`. '
-                                     'Default: "cuda:0".',
-                    type=str, default="cuda:0")
-parser.add_argument('--rnd_seed', help='Random seed to use for PyTorch and NumPy. Results will still be '
-                                       'non-deterministic due to multiprocessing but weight initialization will be the'
-                                       ' same). Default: 0.',
+# parser.add_argument('--device', help='Device to use for NN computations, as passed to `torch.device()`. '
+#                                      'Default: "cuda:0".',
+#                                       type=str, default="cuda:1")
+# parser.add_argument('--rnd_seed', help='Random seed to use for PyTorch and NumPy. Results will still be '
+#                                        'non-deterministic due to multiprocessing but weight initialization will be the'
+#                                        ' same). Default: 0.',
+#                     type=int, default=0)
+
+parser.add_argument('--idx', help='Index of the run. Default: 0.',
                     type=int, default=0)
+
+parser.add_argument('--ideal', help='1 (True) means "use ideal attention values, 0 (False), otherwise. Default: 0.',
+                    type=int, default=0)
+
 args = parser.parse_args()
 # Set computation device
-device = torch.device(args.device)
+device_name = "cuda:" + str(int(args.ideal + args.ideal))
+device = torch.device(device_name)
 # Set random seed (will still be non-deterministic due to multiprocessing but weight initialization will be the same)
-torch.manual_seed(args.rnd_seed)
-np.random.seed(args.rnd_seed)
+# torch.manual_seed(args.rnd_seed)
+# np.random.seed(args.rnd_seed)
 
-# config = {"n_updates": int(1e3), "evaluate_at": int(1e2), "kernel_size": 9, "n_kernels": 32,
-#           "sample_n_sequences": int(1e4), "device": "cuda:0", "rnd_seed": 0}
+# root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
+# root_dir = "/storage/ghadia/DeepRC2/deeprc"
+root_dir = "/itf-fi-ml/shared/users/ghadia/deeprc"
+# root_dir = "/fp/homes01/u01/ec-ghadia/DeepRCFox/deeprc"
+base_results_dir = "/results/singletask_cnn/ideal"
 
-wandb.init(project="DeepRC", group="ideal")
-wandb.config.update(args)
-
-root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
-results_dir = "/results/singletask_cnn"
-dataset = "example_dataset_with_labels"
-
+config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
+          "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "ideal": bool(args.ideal),
+          "dataset": "n_reps_5000_obs_prop_1_po_0.010%_puo_0", "run": "run_0"}
 # Append current timestamp to results directory
-results_dir = os.path.join(f"{results_dir}_{dataset}", datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))
+results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
+run = wandb.init(project="DeepRC", group="ideal")
+run.name = config["run"] + f"_ideal_{str(args.ideal)}_idx_{str(args.idx)}"  # += f"_ideal_{config['ideal']}"
 
-
-config = {"dataset": "example_dataset_with_labels", "sequence_reduction_fraction": 1,
-          "reduction_mb_size": int(5e3), "results_dir": results_dir}
-
+wandb.config.update(args)
 wandb.config.update(config)
 #
 # Create Task definitions
@@ -85,7 +91,6 @@ task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
         pos_weight=1.,  # We can up- or down-weight the positive class if the classes are imbalanced
     ),
 ]).to(device=device)
-
 #
 # Get dataset
 #
@@ -93,6 +98,7 @@ task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
 trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
     task_definition=task_definition,
     metadata_file=f"{root_dir}/datasets/{config['dataset']}/metadata.tsv",
+    n_worker_processes=4,
     repertoiresdata_path=f"{root_dir}/datasets/{config['dataset']}/repertoires",
     metadata_file_id_column='ID',
     sequence_column='amino_acid',
@@ -100,9 +106,9 @@ trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloade
     sequence_labels_column='label',
     sample_n_sequences=args.sample_n_sequences,
     sequence_counts_scaling_fn=no_sequence_count_scaling
+
     # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
 )
-
 #
 # Create DeepRC Network
 #
@@ -120,8 +126,7 @@ model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_net
                output_network=output_network,
                consider_seq_counts=False, n_input_features=20, add_positional_information=True,
                sequence_reduction_fraction=config["sequence_reduction_fraction"],
-               reduction_mb_size=config["reduction_mb_size"], device=device).to(device=device)
-
+               reduction_mb_size=config["reduction_mb_size"], device=device, ideal=config["ideal"]).to(device=device)
 #
 # Train DeepRC model
 #
@@ -129,12 +134,11 @@ train(model, task_definition=task_definition, trainingset_dataloader=trainingset
       trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
       early_stopping_target_id='binary_target_1',  # Get model that performs best for this task
       validationset_eval_dataloader=validationset_eval, n_updates=args.n_updates, evaluate_at=args.evaluate_at,
-      device=device, results_directory=f"{root_dir}{results_dir}"  # Here our results and trained models will be stored
+      device=device, results_directory=f"{root_dir}{results_dir}"
+      # Here our results and trained models will be stored
       )
 # You can use "tensorboard --logdir [results_directory] --port=6060" and open "http://localhost:6060/" in your
 # web-browser to view the progress
-
-
 #
 # Evaluate trained model on testset
 #
