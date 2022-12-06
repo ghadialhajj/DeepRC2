@@ -58,7 +58,7 @@ parser.add_argument('--ideal', help='1 (True) means "use ideal attention values,
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:" + str(int(args.ideal + args.ideal))
+device_name = "cuda:" + str(int((args.ideal + args.ideal)%3))
 device = torch.device(device_name)
 # Set random seed (will still be non-deterministic due to multiprocessing but weight initialization will be the same)
 # torch.manual_seed(args.rnd_seed)
