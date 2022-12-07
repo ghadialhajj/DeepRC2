@@ -66,17 +66,22 @@ device = torch.device(device_name)
 
 # root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
 # root_dir = "/storage/ghadia/DeepRC2/deeprc"
-root_dir = "/itf-fi-ml/shared/users/ghadia/deeprc"
-# root_dir = "/fp/homes01/u01/ec-ghadia/DeepRCFox/deeprc"
+# root_dir = "/itf-fi-ml/shared/users/ghadia/deeprc"
+root_dir = "/fp/homes01/u01/ec-ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
 
 config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
-          "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "ideal": bool(args.ideal),
+          "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'),
           "dataset": "n_reps_5000_obs_prop_1_po_0.010%_puo_0", "run": "run_0"}
 # Append current timestamp to results directory
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
-run = wandb.init(project="DeepRC", group="ideal")
-run.name = config["run"] + f"_ideal_{str(args.ideal)}_idx_{str(args.idx)}"  # += f"_ideal_{config['ideal']}"
+run = wandb.init(project="DeepRC_ideal", group=config['run'])
+run.name = config["run"] + f"_idx_{str(bool(args.idx))}"  # += f"_ideal_{config['ideal']}"
+
+if config['run'] == "run_0":
+    assert not bool(args.ideal)
+else:
+    assert bool(args.ideal)
 
 wandb.config.update(args)
 wandb.config.update(config)
@@ -126,7 +131,7 @@ model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_net
                output_network=output_network,
                consider_seq_counts=False, n_input_features=20, add_positional_information=True,
                sequence_reduction_fraction=config["sequence_reduction_fraction"],
-               reduction_mb_size=config["reduction_mb_size"], device=device, ideal=config["ideal"]).to(device=device)
+               reduction_mb_size=config["reduction_mb_size"], device=device, ideal=bool(args.ideal)).to(device=device)
 #
 # Train DeepRC model
 #
