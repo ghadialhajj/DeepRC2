@@ -316,6 +316,9 @@ class DeepRC(nn.Module):
             self.embedding_dtype = torch.float
             self.sequence_embedding = sequence_embedding_network
 
+        for param in self.sequence_embedding.parameters():
+            param.requires_grad = False
+
         # Attention network (f())
         self.attention_nn = attention_network
 
