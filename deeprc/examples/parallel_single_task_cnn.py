@@ -31,7 +31,7 @@ parser.add_argument('--evaluate_at', help='Evaluate model on training and valida
                     type=int, default=int(5e2))
 parser.add_argument('--kernel_size', help='Size of 1D-CNN kernels (=how many sequence characters a CNN kernel spans).'
                                           'Default: 9',
-                    type=int, default=9)
+                    type=int, default=5)
 parser.add_argument('--n_kernels', help='Number of kernels in the 1D-CNN. This is an important hyper-parameter. '
                                         'Default: 32',
                     type=int, default=32)
