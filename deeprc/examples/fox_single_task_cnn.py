@@ -71,9 +71,9 @@ device = torch.device(device_name)
 root_dir = "/cluster/work/projects/ec35/ec-ghadia/"
 base_results_dir = "/results/singletask_cnn/ideal"
 
-config = {"sequence_reduction_fraction": 1, "reduction_mb_size": int(5e3),
+config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'),
-          "dataset": "n_reps_5000_obs_prop_1_po_0.010%_puo_0", "run": "run_1_ns"}
+          "dataset": "n_600_op_1_po_0.100%_pu_0", "run": "run_2"}
 # Append current timestamp to results directory
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
 run = wandb.init(project="DeepRC_ideal", group=config['run'])
