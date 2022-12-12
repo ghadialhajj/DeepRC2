@@ -53,8 +53,8 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
                 targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence)
 
             # Compute predictions from reduced sequences
-            raw_outputs = model(inputs_flat=inputs, sequence_lengths_flat=sequence_lengths,
-                                sequence_labels_flat=sequence_labels, n_sequences_per_bag=n_sequences)
+            raw_outputs, _ = model(inputs_flat=inputs, sequence_lengths_flat=sequence_lengths,
+                                   sequence_labels_flat=sequence_labels, n_sequences_per_bag=n_sequences)
 
             # Store predictions and labels
             all_raw_outputs.append(raw_outputs.detach())
@@ -187,14 +187,16 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     optimizer.zero_grad()
 
                     # Calculate predictions from reduced sequences,
-                    logit_outputs = model(inputs_flat=inputs, sequence_lengths_flat=sequence_lengths,
-                                          sequence_labels_flat=sequence_labels, n_sequences_per_bag=n_sequences)
+                    logit_outputs, attention_scores = model(inputs_flat=inputs, sequence_lengths_flat=sequence_lengths,
+                                                            sequence_labels_flat=sequence_labels,
+                                                            n_sequences_per_bag=n_sequences)
 
                     # Calculate losses
                     pred_loss = task_definition.get_loss(raw_outputs=logit_outputs, targets=targets,
                                                          ignore_missing_target_values=ignore_missing_target_values)
                     l1reg_loss = (torch.mean(torch.stack([p.abs().float().mean() for p in model.parameters()])))
-                    loss = pred_loss + l1reg_loss * l1_weight_decay
+                    attention_loss = task_definition.get_sequence_loss(attention_scores, sequence_labels)
+                    loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
 
                     # Perform update
                     loss.backward()
@@ -215,7 +217,12 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         wandb.log({f"{tb_group}total_task_loss": pred_loss}, step=update)
                         wandb.log({f"{tb_group}l1reg_loss": l1reg_loss}, step=update)
                         wandb.log({f"{tb_group}total_loss": loss}, step=update)
-                        wandb.log({f"{tb_group}logit_outputs": logit_outputs}, step=update)
+                        wandb.log({f"{tb_group}attention_loss": attention_loss}, step=update)
+
+                        # table = wandb.Table(data=[logit_outputs.transpose(0, 1)], columns=["logit_outputs"])
+                        # wandb.log({f"{tb_group}my_histogram": wandb.plot.histogram(table, "scores",
+                        #                                                            title="Prediction Score Distribution")},
+                        #           step=update)
 
                     # Calculate scores and loss on training set and validation set
                     if update % evaluate_at == 0 or update == n_updates or update == 1:
