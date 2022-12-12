@@ -442,7 +442,7 @@ class DeepRC(nn.Module):
         # Calculate predictions (shape (N, n_outputs))
         predictions = self.output_nn(emb_seqs_after_attention)
 
-        return predictions
+        return predictions, mb_attention_weights
 
     def __compute_features__(self, sequence_char_indices, sequence_lengths, max_mb_seq_len, counts_per_sequence):
         """Compute one-hot sequence features + position features with shape (n_sequences, sequence_length, n_features)
