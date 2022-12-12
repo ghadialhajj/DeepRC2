@@ -17,8 +17,7 @@ class Sequence_Loss(torch.nn.Module):
         super(Sequence_Loss, self).__init__()
 
     def forward(self, raw_score: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
-        """Get target values of all samples from `dataframe` as np.array. `dataframe` is the content of the rep_data
-        file.
+        """Calculate the custom loss for sequence-level labbels
 
         Parameters
         ----------
@@ -143,9 +142,9 @@ class Target(torch.nn.Module):
 
 
 class Sequence_Target(Target):
-    def __init__(self, column_name: str = None, target_id: str = '', task_weight: float = 1.,
-                 pos_weight: float = 1.):
-        """Creates a sequence classification target, i.e. only direction is provided.
+    def __init__(self, column_name: str = None, target_id: str = None, task_weight: float = None,
+                 pos_weight: float = None):
+        """Creates a sequence classification target, i.e. initially, only the direction is provided.
 
         Network output for this task will be an n_instances output, with no activation function.
         Network loss is computed using the value itself.
@@ -159,23 +158,18 @@ class Sequence_Target(Target):
         Parameters
         ----------
         column_name: str
-             Name of column in repertoire file that contains the values for this task.
+             Not used.
         true_class_value: str
-             Entries with value `true_class_value` will be positive class, others will be negative class. Entries
-             with no value are treated as NaN entries, do not belong to any class, and are ignored during training if
-             `deeprc.task_definitions.train(ignore_missing_target_values=True)`.
+             Not used
         target_id: str
-             ID of target as string. If None, uses `column_name` as ID.
+             Not used
         task_weight: float
-            Weight of this task for the total training loss. The training loss is computed as weighted sum of the
-            individual task losses times their respective tasks-weights.
+            Not used
         pos_weight: float
-             Up- or down-weight the contribution of positive class samples. Used as `pos_weight` argument of
-              `torch.nn.BCEWithLogitsLoss()`.
+             Not used
         """
         super().__init__(target_id=target_id if len(target_id) else column_name,
                          n_output_features=1, task_weight=task_weight)
-        self.__pos_weight__ = torch.nn.Parameter(torch.tensor(pos_weight, dtype=torch.float), requires_grad=False)
         self.target_loss = Sequence_Loss()
 
     def get_targets(self, dataframe: pd.DataFrame) -> np.ndarray:
@@ -204,11 +198,11 @@ class Sequence_Target(Target):
         Parameters
         ----------
         raw_outputs: torch.Tensor
-             Raw output of the DeepRC network for this task as torch.Tensor of shape
-            `(n_instances, 1)`
+             Flat raw output of the attention network for this task as torch.Tensor of shape
+            `(n_instances*n_seq_per_rep, 1)`
         targets: torch.Tensor
-             Targets for this task, as returned by .get_targets() as torch.Tensor of shape
-             `(n_instances, 1)`
+             Flat targets for this task, as retrieved from the hdf5 file of shape
+             `(n_instances*n_seq_per_rep, 1)`
 
         Returns
         ---------
@@ -223,11 +217,11 @@ class Sequence_Target(Target):
         Parameters
         ----------
         raw_outputs: torch.Tensor
-             Raw output of the DeepRC network for this task as torch.Tensor of shape
-            `(n_samples, 1)`.
+             Flat raw output of the attention network for this task as torch.Tensor of shape
+            `(n_instances*n_seq_per_rep, 1)`
         targets: torch.Tensor
-             Targets for this task, as returned by .get_targets() as torch.Tensor of shape
-             `(n_samples, 1)`.
+             Flat targets for this task, as retrieved from the hdf5 file of shape
+             `(n_instances*n_seq_per_rep, 1)`
 
         Returns
         ---------
