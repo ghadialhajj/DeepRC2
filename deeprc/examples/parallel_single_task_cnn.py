@@ -8,7 +8,6 @@ Contact -- widrich@ml.jku.at
 """
 
 import argparse
-import numpy as np
 import torch
 from deeprc.task_definitions import TaskDefinition, BinaryTarget, MulticlassTarget, RegressionTarget, Sequence_Target
 from deeprc.dataset_readers import make_dataloaders, no_sequence_count_scaling
@@ -17,17 +16,21 @@ from deeprc.training import train, evaluate
 import wandb
 import os
 import datetime
+from deeprc.utils import log_attentions
 
 #
 # Get command line arguments
 #
 parser = argparse.ArgumentParser()
 parser.add_argument('--n_updates', help='Number of updates to train for. Recommended: int(1e5). Default: int(1e3)',
-                    type=int, default=int(1e4))
+                    type=int, default=int(5e3))
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
                     type=int, default=int(5e2))
+parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
+                                                    'Recommended: int(5e3). Default: int(1e2).',
+                    type=int, default=int(2.5e2))
 parser.add_argument('--kernel_size', help='Size of 1D-CNN kernels (=how many sequence characters a CNN kernel spans).'
                                           'Default: 9',
                     type=int, default=5)
@@ -41,6 +44,8 @@ parser.add_argument('--sample_n_sequences', help='Number of instances to reduce 
                     type=int, default=int(1e4))
 parser.add_argument('--learning_rate', help='Learning rate of DeepRC using Adam optimizer. Default: 1e-4',
                     type=float, default=1e-4)
+parser.add_argument('--prop', help='Training of the output network will start after prop*n_updates updates',
+                    type=float, default=0.9)
 # parser.add_argument('--device', help='Device to use for NN computations, as passed to `torch.device()`. '
 #                                      'Default: "cuda:0".',
 #                                       type=str, default="cuda:1")
@@ -50,14 +55,14 @@ parser.add_argument('--learning_rate', help='Learning rate of DeepRC using Adam 
 #                     type=int, default=0)
 
 parser.add_argument('--idx', help='Index of the run. Default: 0.',
-                    type=int, default=0)
+                    type=int, default=1)
 
 # parser.add_argument('--ideal', help='1 (True) means "use ideal attention values, 0 (False), otherwise. Default: 0.',
 #                     type=int, default=0)
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:0"  # + str(int((args.ideal + args.idx)%2))
+device_name = "cuda:1"  # + str(int((args.ideal + args.idx)%2))
 device = torch.device(device_name)
 # Set random seed (will still be non-deterministic due to multiprocessing but weight initialization will be the same)
 # torch.manual_seed(args.rnd_seed)
@@ -72,16 +77,12 @@ base_results_dir = "/results/singletask_cnn/ideal"
 
 config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'),
-          "dataset": "n_600_op_1_po_0.100%_pu_0", "pos_weight" : 1}  # , "run": "run_2"}
+          "dataset": "n_600_op_1_po_0.100%_pu_0", "pos_weight": 1}  # , "run": "run_2"}
+# "dataset": "n_20_op_1_po_0.100%25_pu_0", "pos_weight": 1}  # , "run": "run_2"}
 # Append current timestamp to results directory
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
-run = wandb.init(project="DeepRC_AdHoc1", group="histogram")
+run = wandb.init(project="DeepRC_AdHoc1", group="train_att_then_freeze")
 run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
-
-# if config['run'] == "run_0":
-#    assert not bool(args.ideal)
-# else:
-#    assert bool(args.ideal)
 
 wandb.config.update(args)
 wandb.config.update(config)
@@ -115,6 +116,8 @@ trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloade
 
     # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
 )
+dl_dict = {"trainingset": trainingset, "trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval,
+           "testset_eval": testset_eval}
 #
 # Create DeepRC Network
 #
@@ -136,18 +139,24 @@ model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_net
 #
 # Train DeepRC model
 #
+log_attentions(model=model, dataloaders=dl_dict, device=device)
+
 train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
       trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
       early_stopping_target_id='binary_target_1',  # Get model that performs best for this task
       validationset_eval_dataloader=validationset_eval, n_updates=args.n_updates, evaluate_at=args.evaluate_at,
-      device=device, results_directory=f"{root_dir}{results_dir}"
-      # Here our results and trained models will be stored
+      device=device, results_directory=f"{root_dir}{results_dir}", prop=args.prop,
+      log_training_stats_at=args.log_training_stats_at  # Here our results and trained models will be stored
       )
 # You can use "tensorboard --logdir [results_directory] --port=6060" and open "http://localhost:6060/" in your
 # web-browser to view the progress
 #
 # Evaluate trained model on testset
 #
-scores, _ = evaluate(model=model, dataloader=testset_eval, task_definition=task_definition, device=device)
+log_attentions(model=model, dataloaders=dl_dict, device=device)
+
+scores, sequence_scores = evaluate(model=model, dataloader=testset_eval, task_definition=task_definition, device=device)
 wandb.run.summary.update(scores["binary_target_1"])
+wandb.run.summary.update(sequence_scores["sequence_class"])
 print(f"Test scores:\n{scores}")
+wandb.finish()
