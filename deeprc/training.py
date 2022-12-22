@@ -15,6 +15,8 @@ from widis_lstm_tools.utils.collection import TeePrint, SaverLoader, close_all
 from deeprc.task_definitions import TaskDefinition
 import wandb
 from typing import Tuple
+from deeprc.utils import get_outputs
+from torch import Tensor
 
 
 def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, task_definition: TaskDefinition,
@@ -43,40 +45,11 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
         See `deeprc/examples/` for examples.
     """
     with torch.no_grad():
-        model.to(device=device)
-        all_raw_outputs = []
-        all_targets = []
-        all_attention_outputs = []
-        all_sequence_targets = []
+        all_logits, all_targets, all_attentions, all_seq_targets = get_outputs(model, dataloader, show_progress, device)
 
-        for scoring_data in tqdm(dataloader, total=len(dataloader), desc="Evaluating model", disable=not show_progress):
-            # Get samples as lists
-            targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, sample_ids = scoring_data
-
-            # Apply attention-based sequence reduction and create minibatch
-            targets, inputs, sequence_lengths, sequence_labels, n_sequences = model.reduce_and_stack_minibatch(
-                targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence)
-
-            # Compute predictions from reduced sequences
-            raw_outputs, attention_outputs = model(inputs_flat=inputs, sequence_lengths_flat=sequence_lengths,
-                                                   sequence_labels_flat=sequence_labels,
-                                                   n_sequences_per_bag=n_sequences)
-
-            # Store predictions and labels
-            all_raw_outputs.append(raw_outputs.detach())
-            all_targets.append(targets.detach())
-            all_attention_outputs.append(attention_outputs.detach())
-            all_sequence_targets.append(sequence_labels.detach())
-
-        # Compute scores
-        all_raw_outputs = torch.cat(all_raw_outputs, dim=0)
-        all_targets = torch.cat(all_targets, dim=0)
-        all_attention_outputs = torch.cat(all_attention_outputs, dim=0)
-        all_sequence_targets = torch.cat(all_sequence_targets, dim=0)
-
-        scores = task_definition.get_scores(raw_outputs=all_raw_outputs, targets=all_targets)
-        sequence_scores = task_definition.get_sequence_scores(raw_attentions=all_attention_outputs.squeeze(),
-                                                              sequence_targets=all_sequence_targets)
+        scores = task_definition.get_scores(raw_outputs=all_logits, targets=all_targets)
+        sequence_scores = task_definition.get_sequence_scores(raw_attentions=all_attentions.squeeze(),
+                                                              sequence_targets=all_seq_targets)
 
         return scores, sequence_scores
 
@@ -206,9 +179,10 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     optimizer.zero_grad()
 
                     # Calculate predictions from reduced sequences,
-                    logit_outputs, attention_outputs = model(inputs_flat=inputs, sequence_lengths_flat=sequence_lengths,
-                                                             sequence_labels_flat=sequence_labels,
-                                                             n_sequences_per_bag=n_sequences)
+                    logit_outputs, attention_outputs, _ = model(inputs_flat=inputs,
+                                                                sequence_lengths_flat=sequence_lengths,
+                                                                sequence_labels_flat=sequence_labels,
+                                                                n_sequences_per_bag=n_sequences)
 
                     # Calculate losses
                     pred_loss = task_definition.get_loss(raw_outputs=logit_outputs, targets=targets,
@@ -217,52 +191,55 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(), sequence_labels)
                     loss = pred_loss * int(second_phase) + l1reg_loss * l1_weight_decay + attention_loss
 
+                    with torch.no_grad():
+                        total_loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
                     # Perform update
                     loss.backward()
                     optimizer.step()
 
                     update += 1
                     update_progess_bar.update()
-                    update_progess_bar.set_description(desc=f"loss={loss.item():6.4f}", refresh=True)
+                    update_progess_bar.set_description(desc=f"loss={total_loss.item():6.4f}", refresh=True)
 
                     # Add to tensorboard
-                    if update % log_training_stats_at == 0 or update == 0:
-                        tb_group = 'training/'
+                    if update % log_training_stats_at == 0 or update == 1:
+                        group = 'training/'
                         # Loop through tasks and add losses to tensorboard
                         pred_losses = task_definition.get_losses(raw_outputs=logit_outputs, targets=targets)
                         pred_losses = pred_losses.mean(dim=1)  # shape: (n_tasks, n_samples, 1) -> (n_tasks, 1)
                         for task_id, task_loss in zip(task_definition.get_task_ids(), pred_losses):
-                            wandb.log({f"{tb_group}{task_id}_loss": task_loss}, step=update)  # loss per target
-                        # wandb.log({f"{tb_group}total_task_loss": pred_loss}, step=update)  # sum losses over targets
-                        wandb.log({f"{tb_group}l1reg_loss": l1reg_loss}, step=update)
-                        wandb.log({f"{tb_group}attention_loss": attention_loss}, step=update)
-                        wandb.log({f"{tb_group}total_loss": loss}, step=update)  # sum losses over targets + l1 + att.
+                            wandb.log({f"{group}{task_id}_loss": task_loss}, step=update)  # loss per target
+                        # wandb.log({f"{group}total_task_loss": pred_loss}, step=update)  # sum losses over targets
+                        wandb.log({f"{group}l1reg_loss": l1reg_loss}, step=update)
+                        wandb.log({f"{group}attention_loss": attention_loss}, step=update)
+                        wandb.log({f"{group}total_loss": total_loss},
+                                  step=update)  # sum losses over targets + l1 + att.
 
-                        tb_group = 'training/parameters/'
-                        wandb.log({f"{tb_group}second_phase": int(second_phase)}, step=update)
-                        tb_group = 'training/metrics/'
+                        group = 'gradients/'
                         wandb.log(
-                            {f"{tb_group}sequence_embedding_grad_mean": list(model.sequence_embedding.parameters())[
+                            {f"{group}sequence_embedding_grad_mean": list(model.sequence_embedding.parameters())[
                                 0].grad.mean().cpu().numpy()}, step=update)
-                        wandb.log({f"{tb_group}attention_nn_grad_mean": list(model.attention_nn.parameters())[
+                        wandb.log({f"{group}attention_nn_grad_mean": list(model.attention_nn.parameters())[
                             0].grad.mean().cpu().numpy()}, step=update)
-                        wandb.log({f"{tb_group}output_nn_grad_mean": list(model.output_nn.parameters())[
+                        wandb.log({f"{group}output_nn_grad_mean": list(model.output_nn.parameters())[
                             0].grad.mean().cpu().numpy()}, step=update)
 
                     # Calculate scores and loss on training set and validation set
                     if update % evaluate_at == 0 or update == n_updates or update == 1:
                         print("  Calculating training score...")
-                        scores, sequence_scores = evaluate(model=model, dataloader=trainingset_eval_dataloader,
-                                                           task_definition=task_definition, device=device)
+                        scores, sequence_scores = evaluate(model=model,
+                                                           dataloader=trainingset_eval_dataloader,
+                                                           task_definition=task_definition,
+                                                           device=device)
                         print(f" ...done!")
                         tprint(f"[training_inference] u: {update:07d}; scores: {scores};")
 
-                        tb_group = 'training_inference/'
+                        group = 'training_inference/'
                         for task_id, task_scores in scores.items():
-                            [wandb.log({f"{tb_group}{task_id}/{score_name}": score}, step=update)
+                            [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
                              for score_name, score in task_scores.items()]
                         for task_id, task_scores in sequence_scores.items():
-                            [wandb.log({f"{tb_group}{task_id}/{score_name}": score}, step=update)
+                            [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
                              for score_name, score in task_scores.items()]
 
                         print("  Calculating validation score...")
@@ -273,12 +250,12 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         print(f" ...done!")
                         tprint(f"[validation] u: {update:07d}; scores: {scores};")
 
-                        tb_group = 'validation/'
+                        group = 'validation/'
                         for task_id, task_scores in scores.items():
-                            [wandb.log({f"{tb_group}{task_id}/{score_name}": score}, step=update)
+                            [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
                              for score_name, score in task_scores.items()]
                         for task_id, task_scores in sequence_scores.items():
-                            [wandb.log({f"{tb_group}{task_id}/{score_name}": score}, step=update)
+                            [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
                              for score_name, score in task_scores.items()]
 
                         # If we have a new best loss on the validation set, we save the model as new best model
