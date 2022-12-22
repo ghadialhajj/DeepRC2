@@ -6,6 +6,8 @@ Author -- Michael Widrich
 Contact -- widrich@ml.jku.at
 """
 import os
+from itertools import chain
+
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -16,7 +18,7 @@ from typing import Tuple
 
 
 def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, task_definition: TaskDefinition,
-             show_progress: bool = True, device: torch.device = torch.device('cuda:0')) -> Tuple[dict, dict]:
+             show_progress: bool = True, device: torch.device = torch.device('cuda:1')) -> Tuple[dict, dict]:
     """Compute DeepRC model scores on given dataset for tasks specified in `task_definition`
     
     Parameters
@@ -83,10 +85,10 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
           trainingset_dataloader: torch.utils.data.DataLoader, trainingset_eval_dataloader: torch.utils.data.DataLoader,
           validationset_eval_dataloader: torch.utils.data.DataLoader,
           results_directory: str = "results", n_updates: int = int(1e5), show_progress: bool = True,
-          load_file: str = None, device: torch.device = torch.device('cuda:0'),
+          load_file: str = None, device: torch.device = torch.device('cuda:1'),
           num_torch_threads: int = 3, learning_rate: float = 1e-4, l1_weight_decay: float = 0,
           l2_weight_decay: float = 0, log_training_stats_at: int = int(1e2), evaluate_at: int = int(5e3),
-          ignore_missing_target_values: bool = True):
+          ignore_missing_target_values: bool = True, prop: float = 0.7):
     """Train a DeepRC model on a given dataset on tasks specified in `task_definition`
      
      Model with lowest validation set loss on target `early_stopping_target_id` will be taken as final model (=early
@@ -184,8 +186,14 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
             tprint("Training model...")
             update_progess_bar = tqdm(total=n_updates, disable=not show_progress, position=0,
                                       desc=f"loss={np.nan:6.4f}")
+            second_phase = False
             while update < n_updates:
                 for data in trainingset_dataloader:
+                    if update == int(prop * n_updates):
+                        second_phase = True
+                        for param in chain(model.attention_nn.parameters(), model.sequence_embedding.parameters()):
+                            param.requires_grad = False
+
                     # Get samples as lists
                     targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, sample_ids = data
 
@@ -207,7 +215,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                                                          ignore_missing_target_values=ignore_missing_target_values)
                     l1reg_loss = (torch.mean(torch.stack([p.abs().float().mean() for p in model.parameters()])))
                     attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(), sequence_labels)
-                    loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
+                    loss = pred_loss * int(second_phase) + l1reg_loss * l1_weight_decay + attention_loss
 
                     # Perform update
                     loss.backward()
@@ -218,7 +226,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     update_progess_bar.set_description(desc=f"loss={loss.item():6.4f}", refresh=True)
 
                     # Add to tensorboard
-                    if update % log_training_stats_at == 0:
+                    if update % log_training_stats_at == 0 or update == 0:
                         tb_group = 'training/'
                         # Loop through tasks and add losses to tensorboard
                         pred_losses = task_definition.get_losses(raw_outputs=logit_outputs, targets=targets)
@@ -230,10 +238,16 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         wandb.log({f"{tb_group}attention_loss": attention_loss}, step=update)
                         wandb.log({f"{tb_group}total_loss": loss}, step=update)  # sum losses over targets + l1 + att.
 
-                        # table = wandb.Table(data=[logit_outputs.transpose(0, 1)], columns=["logit_outputs"])
-                        # wandb.log({f"{tb_group}my_histogram": wandb.plot.histogram(table, "scores",
-                        #                                                            title="Prediction Score Distribution")},
-                        #           step=update)
+                        tb_group = 'training/parameters/'
+                        wandb.log({f"{tb_group}second_phase": int(second_phase)}, step=update)
+                        tb_group = 'training/metrics/'
+                        wandb.log(
+                            {f"{tb_group}sequence_embedding_grad_mean": list(model.sequence_embedding.parameters())[
+                                0].grad.mean().cpu().numpy()}, step=update)
+                        wandb.log({f"{tb_group}attention_nn_grad_mean": list(model.attention_nn.parameters())[
+                            0].grad.mean().cpu().numpy()}, step=update)
+                        wandb.log({f"{tb_group}output_nn_grad_mean": list(model.output_nn.parameters())[
+                            0].grad.mean().cpu().numpy()}, step=update)
 
                     # Calculate scores and loss on training set and validation set
                     if update % evaluate_at == 0 or update == n_updates or update == 1:
