@@ -421,7 +421,7 @@ class DeepRC(nn.Module):
         mb_attention_weights = self.attention_nn(mb_emb_seqs)
 
         # Compute representation per bag (N times shape (d_v,))
-        mb_emb_seqs_after_attention = []
+        mb_emb_reps_after_attention = []
         start_i = 0
         for n_seqs in n_sequences_per_bag:
             # Get sequence embedding h() for single bag (shape: (n_sequences_per_bag, d_v))
@@ -431,18 +431,18 @@ class DeepRC(nn.Module):
             # Calculate attention activations (softmax over n_sequences_per_bag) (shape: (n_sequences_per_bag, 1))
             attention_weights = torch.softmax(attention_weights, dim=0)
             # Apply attention weights to sequence features (shape: (n_sequences_per_bag, d_v))
-            emb_seqs_after_attention = emb_seqs * attention_weights
+            emb_reps_after_attention = emb_seqs * attention_weights
             # Compute weighted sum over sequence features after attention (format: (d_v,))
-            mb_emb_seqs_after_attention.append(emb_seqs_after_attention.sum(dim=0))
+            mb_emb_reps_after_attention.append(emb_reps_after_attention.sum(dim=0))
             start_i += n_seqs
 
         # Stack representations of bags (shape (N, d_v))
-        emb_seqs_after_attention = torch.stack(mb_emb_seqs_after_attention, dim=0)
+        emb_reps_after_attention = torch.stack(mb_emb_reps_after_attention, dim=0)
 
         # Calculate predictions (shape (N, n_outputs))
-        predictions = self.output_nn(emb_seqs_after_attention)
+        predictions = self.output_nn(emb_reps_after_attention)
 
-        return predictions, mb_attention_weights
+        return predictions, mb_attention_weights, emb_reps_after_attention
 
     def __compute_features__(self, sequence_char_indices, sequence_lengths, max_mb_seq_len, counts_per_sequence):
         """Compute one-hot sequence features + position features with shape (n_sequences, sequence_length, n_features)
