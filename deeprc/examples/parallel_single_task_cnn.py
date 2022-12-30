@@ -62,7 +62,7 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:0"  # + str(int((args.ideal + args.idx)%2))
+device_name = "cuda:1"  # + str(int((args.ideal + args.idx)%2))
 device = torch.device(device_name)
 # Set random seed (will still be non-deterministic due to multiprocessing but weight initialization will be the same)
 # torch.manual_seed(args.rnd_seed)
@@ -70,6 +70,7 @@ device = torch.device(device_name)
 
 # root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
+dataset_type = "all_observed"
 # root_dir = "/itf-fi-ml/shared/users/ghadia/deeprc"
 # root_dir = "/fp/homes01/u01/ec-ghadia/DeepRC2/deeprc"
 # root_dir = "/cluster/work/projects/ec35/ec-ghadia/"
@@ -77,10 +78,20 @@ base_results_dir = "/results/singletask_cnn/ideal"
 
 config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.77,
-          "dataset": "n_600_wr_0.100%_po_80%", "pos_weight": 1, "train_then_freeze": True,
-          "tag": ["AdHoc1.3.1"], "staged_training": True} #n_600_op_1_po_0.100%_pu_0
-            # "dataset": "n_600_wr_0.100%_po_80%", "pos_weight": 100, "train_then_freeze": False}
-# "dataset": "n_20_op_1_po_0.100%25_pu_0", "pos_weight": 100}  # , "run": "run_2"}
+          "dataset": "n_600_wr_0.500%_po_100%", "pos_weight": 1, "train_then_freeze": False,
+          "staged_training": False, "plain_DeepRC": True}  # , "tag": ["AdHoc1.3.1"]}
+
+# all_observed datasets:
+# n_600_wr_0.100%_po_100%
+# n_600_wr_0.300%_po_100%
+# n_600_wr_0.500%_po_100%
+# n_600_wr_0.700%_po_100%
+
+# 80202080 datasets:
+# n_600_wr_0.100%_po_80%_sw_50%
+# n_600_wr_0.300%_po_80%_sw_50%
+# n_600_wr_0.500%_po_80%_sw_50%
+# n_600_wr_0.700%_po_80%_sw_50%
 
 # Append current timestamp to results directory
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
@@ -92,7 +103,7 @@ if config["staged_training"]:
 else:
     group = f"TE_n_up_{args.n_updates}_pw_{config['pos_weight']}"
 
-run = wandb.init(project="DeepRC_AdHoc1.3", group=group, tags=config["tag"])
+run = wandb.init(project="DeepRC_PlainW_StanData", group=group)  # , tags=config["tag"])
 run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
 
 wandb.config.update(args)
@@ -115,9 +126,9 @@ task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
 # Get data loaders for training set and training-, validation-, and test-set in evaluation mode (=no random subsampling)
 trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
     task_definition=task_definition,
-    metadata_file=f"{root_dir}/datasets/{config['dataset']}/metadata.tsv",
+    metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/metadata.tsv",
     n_worker_processes=4,
-    repertoiresdata_path=f"{root_dir}/datasets/{config['dataset']}/repertoires",
+    repertoiresdata_path=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/repertoires",
     metadata_file_id_column='ID',
     sequence_column='amino_acid',
     sequence_counts_column='templates',
@@ -127,7 +138,7 @@ trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloade
 
     # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
 )
-dl_dict = {"trainingset": trainingset, "trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval,
+dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval,
            "testset_eval": testset_eval}
 #
 # Create DeepRC Network
@@ -159,7 +170,8 @@ train(model, task_definition=task_definition, trainingset_dataloader=trainingset
       validationset_eval_dataloader=validationset_eval, logger=logger, n_updates=args.n_updates,
       evaluate_at=args.evaluate_at, device=device, results_directory=f"{root_dir}{results_dir}", prop=config["prop"],
       log_training_stats_at=args.log_training_stats_at,  # Here our results and trained models will be stored
-      train_then_freeze=config["train_then_freeze"], staged_training=config["staged_training"])
+      train_then_freeze=config["train_then_freeze"], staged_training=config["staged_training"],
+      plain_DeepRC=config["plain_DeepRC"])
 
 logger.log_stats(model=model, device=device, step=args.n_updates)
 

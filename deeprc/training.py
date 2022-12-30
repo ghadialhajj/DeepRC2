@@ -44,7 +44,7 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
         See `deeprc/examples/` for examples.
     """
     with torch.no_grad():
-        all_logits, all_targets, all_attentions, all_seq_targets, _ = get_outputs(model, dataloader, show_progress,
+        all_logits, all_targets, all_attentions, all_seq_targets, *_ = get_outputs(model, dataloader, show_progress,
                                                                                   device)
 
         scores = task_definition.get_scores(raw_outputs=all_logits, targets=all_targets)
@@ -62,7 +62,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
           num_torch_threads: int = 3, learning_rate: float = 1e-4, l1_weight_decay: float = 0,
           l2_weight_decay: float = 0, log_training_stats_at: int = int(1e2), evaluate_at: int = int(5e3),
           ignore_missing_target_values: bool = True, prop: float = 0.7, train_then_freeze: bool = True,
-          staged_training: bool = True):
+          staged_training: bool = True, plain_DeepRC: bool = False):
     """Train a DeepRC model on a given dataset on tasks specified in `task_definition`
      
      Model with lowest validation set loss on target `early_stopping_target_id` will be taken as final model (=early
@@ -172,13 +172,13 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                                 param.requires_grad = False
 
                     # Get samples as lists
-                    targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, sample_ids = data
+                    targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence, sample_ids = data
 
                     # Apply attention-based sequence reduction and create minibatch
                     with torch.no_grad():
-                        targets, inputs, sequence_lengths, sequence_labels, n_sequences = \
+                        targets, inputs, sequence_lengths, sequence_labels, sequence_pools, n_sequences = \
                             model.reduce_and_stack_minibatch(
-                                targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence)
+                                targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence)
                     # Reset gradients
                     optimizer.zero_grad()
 
@@ -192,11 +192,18 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     pred_loss = task_definition.get_loss(raw_outputs=logit_outputs, targets=targets,
                                                          ignore_missing_target_values=ignore_missing_target_values)
                     l1reg_loss = (torch.mean(torch.stack([p.abs().float().mean() for p in model.parameters()])))
-                    attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(), sequence_labels)
-                    if staged_training:
-                        loss = pred_loss * int(second_phase) + l1reg_loss * l1_weight_decay + attention_loss
+                    if plain_DeepRC:
+                        with torch.no_grad():
+                            attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(), sequence_labels)
                     else:
-                        loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
+                        attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(), sequence_labels)
+                    if plain_DeepRC:
+                        loss = pred_loss + l1reg_loss * l1_weight_decay
+                    else:
+                        if staged_training:
+                            loss = pred_loss * int(second_phase) + l1reg_loss * l1_weight_decay + attention_loss
+                        else:
+                            loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
 
                     with torch.no_grad():
                         total_loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
