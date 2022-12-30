@@ -269,6 +269,7 @@ class DatasetToHDF5(object):
             sample_sequences_start_end[1:, 0] = sample_sequences_start_end[:-1, 1]
             sample_sequences_start_end[0, 0] = 0
             self.seq_lens = seq_lens
+            self.fake = True
 
             # Get AA sequences and store in one pre-allocated numpy int8 array (padding with -1)
             amino_acid_sequences = np.full(shape=(n_sequences_per_sample.sum(), sample_max_seq_len.max()),
