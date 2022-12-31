@@ -6,9 +6,23 @@ Author -- Michael Widrich
 Contact -- widrich@ml.jku.at
 """
 import os
+from time import time
+
 import requests
 import shutil
 import tqdm
+
+
+class Timer(object):
+    def __init__(self, name):
+        self.name = name
+
+    def __enter__(self):
+        self.start = time()
+
+    def __exit__(self, type, value, traceback):
+        self.end = time()
+        print(f"{self.name}: {self.end - self.start}")
 
 
 def user_confirmation(text: str = "Continue?", continue_if: str = 'y', abort_if: str = 'n'):

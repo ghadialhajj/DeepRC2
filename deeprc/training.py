@@ -217,6 +217,15 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         wandb.log({f"{tb_group}total_loss": loss}, step=update)
                         wandb.log({f"{tb_group}logit_outputs": logit_outputs}, step=update)
 
+                        group = 'gradients/'
+                        wandb.log(
+                            {f"{group}sequence_embedding_grad_mean": list(model.sequence_embedding.parameters())[
+                                0].grad.mean().cpu().numpy()}, step=update)
+                        wandb.log({f"{group}attention_nn_grad_mean": list(model.attention_nn.parameters())[
+                            0].grad.mean().cpu().numpy()}, step=update)
+                        wandb.log({f"{group}output_nn_grad_mean": list(model.output_nn.parameters())[
+                            0].grad.mean().cpu().numpy()}, step=update)
+
                     # Calculate scores and loss on training set and validation set
                     if update % evaluate_at == 0 or update == n_updates or update == 1:
                         print("  Calculating training score...")

@@ -24,7 +24,7 @@ import datetime
 #
 parser = argparse.ArgumentParser()
 parser.add_argument('--n_updates', help='Number of updates to train for. Recommended: int(1e5). Default: int(1e3)',
-                    type=int, default=int(1e4))
+                    type=int, default=int(20e3))
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
@@ -58,25 +58,25 @@ parser.add_argument('--ideal', help='1 (True) means "use ideal attention values,
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:0" # + str(int((args.ideal + args.idx)%2))
+device_name = "cuda:1" # + str(int((args.ideal + args.idx)%2))
 device = torch.device(device_name)
 # Set random seed (will still be non-deterministic due to multiprocessing but weight initialization will be the same)
 # torch.manual_seed(args.rnd_seed)
 # np.random.seed(args.rnd_seed)
 
 # root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
-# root_dir = "/storage/ghadia/DeepRC2/deeprc"
+root_dir = "/storage/ghadia/DeepRC2/deeprc"
 # root_dir = "/itf-fi-ml/shared/users/ghadia/deeprc"
 # root_dir = "/fp/homes01/u01/ec-ghadia/DeepRC2/deeprc"
-root_dir = "/cluster/work/projects/ec35/ec-ghadia/"
+# root_dir = "/cluster/work/projects/ec35/ec-ghadia/"
 base_results_dir = "/results/singletask_cnn/ideal"
 
 config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'),
-          "dataset": "n_600_op_1_po_0.100%_pu_0", "run": "run_2"}
+          "dataset": "n_600_wr_0.001", "run": "run_2"} # n_600_wr_0.100%_po_100%
 # Append current timestamp to results directory
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
-run = wandb.init(project="DeepRC_ideal", group=config['run'])
+run = wandb.init(project="DeepRC_PlainW_StanData", group="UnClean Data")
 run.name = config["run"] + f"_idx_{str(args.idx)}"  # += f"_ideal_{config['ideal']}"
 
 # if config['run'] == "run_0":
@@ -103,9 +103,9 @@ task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
 # Get data loaders for training set and training-, validation-, and test-set in evaluation mode (=no random subsampling)
 trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
     task_definition=task_definition,
-    metadata_file=f"{root_dir}/datasets/{config['dataset']}/metadata.tsv",
+    metadata_file=f"{root_dir}/datasets/test/{config['dataset']}/metadata.tsv",
     n_worker_processes=4,
-    repertoiresdata_path=f"{root_dir}/datasets/{config['dataset']}/repertoires",
+    repertoiresdata_path=f"{root_dir}/datasets/test/{config['dataset']}/repertoires",
     metadata_file_id_column='ID',
     sequence_column='amino_acid',
     sequence_counts_column='templates',
@@ -115,6 +115,7 @@ trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloade
 
     # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
 )
+
 #
 # Create DeepRC Network
 #
