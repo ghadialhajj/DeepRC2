@@ -62,7 +62,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
           num_torch_threads: int = 3, learning_rate: float = 1e-4, l1_weight_decay: float = 0,
           l2_weight_decay: float = 0, log_training_stats_at: int = int(1e2), evaluate_at: int = int(5e3),
           ignore_missing_target_values: bool = True, prop: float = 0.7, train_then_freeze: bool = True,
-          staged_training: bool = True, plain_DeepRC: bool = False):
+          staged_training: bool = True, plain_DeepRC: bool = False, log: bool = True):
     """Train a DeepRC model on a given dataset on tasks specified in `task_definition`
      
      Model with lowest validation set loss on target `early_stopping_target_id` will be taken as final model (=early
@@ -114,7 +114,9 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
          If True, missing target values will be ignored for training. This can be useful if auxiliary tasks are not
          available for all samples but might increase the computation time per update.
     """
-    logger.log_stats(model=model, device=device, step=0, logg_and_att= True)
+
+    if log:
+        logger.log_stats(model=model, device=device, step=0, logg_and_att= True)
 
     os.makedirs(results_directory, exist_ok=True)
 
@@ -217,7 +219,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
                     # Add to tensorboard
                     if update % log_training_stats_at == 0 or update == 1:
-                        if update != 1:
+                        if update != 1 and log:
                             logger.log_stats(model=model, device=device, step=update, logg_and_att=True)
                         group = 'training/'
                         # Loop through tasks and add losses to tensorboard
@@ -295,6 +297,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
             state.update(saver_loader.load_from_ram())  # load best model so far
             saver_loader.save_to_file(filename=f'best_u{update}.tar.gzip')
             print('Finished Training!')
+            if log:
+                logger.log_stats(model=model, device=device, step=n_updates, logg_and_att=True)
     except Exception as e:
         with open(logfile, 'a') as lf:
             print(f"Exception: {e}", file=lf)

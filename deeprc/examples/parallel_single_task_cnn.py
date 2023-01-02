@@ -8,6 +8,8 @@ Contact -- widrich@ml.jku.at
 """
 
 import argparse
+
+import numpy as np
 import torch
 from deeprc.task_definitions import TaskDefinition, BinaryTarget, MulticlassTarget, RegressionTarget, Sequence_Target
 from deeprc.dataset_readers import make_dataloaders, no_sequence_count_scaling
@@ -64,9 +66,11 @@ args = parser.parse_args()
 # Set computation device
 device_name = "cuda:1"  # + str(int((args.ideal + args.idx)%2))
 device = torch.device(device_name)
+
+seeds = [92, 9241, 5149, 41, 720, 813, 48525]
 # Set random seed (will still be non-deterministic due to multiprocessing but weight initialization will be the same)
-# torch.manual_seed(args.rnd_seed)
-# np.random.seed(args.rnd_seed)
+torch.manual_seed(seeds[args.idx])
+np.random.seed(seeds[args.idx])
 
 # root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
@@ -78,14 +82,19 @@ base_results_dir = "/results/singletask_cnn/ideal"
 
 config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.77,
-          "dataset": "n_600_wr_0.500%_po_100%", "pos_weight": 1, "train_then_freeze": False,
-          "staged_training": False, "plain_DeepRC": True}  # , "tag": ["AdHoc1.3.1"]}
+          "dataset": "n_600_wr_0.050%_po_100%", "pos_weight": 1, "train_then_freeze": False,
+          "staged_training": False, "plain_DeepRC": True, "Branch": "AdHoc1"}  # , "tag": ["AdHoc1.3.1"]}
 
 # all_observed datasets:
 # n_600_wr_0.100%_po_100%
 # n_600_wr_0.300%_po_100%
 # n_600_wr_0.500%_po_100%
 # n_600_wr_0.700%_po_100%
+
+# n_600_wr_0.001%_po_100%
+# n_600_wr_0.005%_po_100%
+# n_600_wr_0.010%_po_100%
+# n_600_wr_0.050%_po_100%
 
 # 80202080 datasets:
 # n_600_wr_0.100%_po_80%_sw_50%
@@ -102,7 +111,6 @@ if config["staged_training"]:
         group = f"TTF_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight']}"
 else:
     group = f"TE_n_up_{args.n_updates}_pw_{config['pos_weight']}"
-
 run = wandb.init(project="DeepRC_PlainW_StanData", group=group)  # , tags=config["tag"])
 run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
 
@@ -162,7 +170,6 @@ model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_net
 # Train DeepRC model
 #
 logger = Logger(dataloaders=dl_dict)
-logger.log_stats(model=model, device=device, step=0)
 
 train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
       trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
@@ -171,9 +178,9 @@ train(model, task_definition=task_definition, trainingset_dataloader=trainingset
       evaluate_at=args.evaluate_at, device=device, results_directory=f"{root_dir}{results_dir}", prop=config["prop"],
       log_training_stats_at=args.log_training_stats_at,  # Here our results and trained models will be stored
       train_then_freeze=config["train_then_freeze"], staged_training=config["staged_training"],
-      plain_DeepRC=config["plain_DeepRC"])
+      plain_DeepRC=config["plain_DeepRC"], log=False)
 
-logger.log_stats(model=model, device=device, step=args.n_updates)
+# logger.log_stats(model=model, device=device, step=args.n_updates)
 
 #
 # Evaluate trained model on testset
