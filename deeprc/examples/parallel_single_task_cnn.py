@@ -58,7 +58,7 @@ parser.add_argument('--ideal', help='1 (True) means "use ideal attention values,
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:1" # + str(int((args.ideal + args.idx)%2))
+device_name = "cuda:0" # + str(int((args.ideal + args.idx)%2))
 device = torch.device(device_name)
 # Set random seed (will still be non-deterministic due to multiprocessing but weight initialization will be the same)
 # torch.manual_seed(args.rnd_seed)
@@ -73,11 +73,17 @@ base_results_dir = "/results/singletask_cnn/ideal"
 
 config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'),
-          "dataset": "n_600_wr_0.001", "run": "run_2"} # n_600_wr_0.100%_po_100%
+          "dataset": "n_600_wr_0.100%_po_100%", "Branch": "ideal"}  # , "run": "run_2"}  # n_600_wr_0.100%_po_100%
+
+if args.ideal == 0:
+    group = f"TE_n_up_{args.n_updates}_pw_1"
+else:
+    group = f"TE_n_up_{args.n_updates}_ideal"
+# group = "create hdf5"
 # Append current timestamp to results directory
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
-run = wandb.init(project="DeepRC_PlainW_StanData", group="UnClean Data")
-run.name = config["run"] + f"_idx_{str(args.idx)}"  # += f"_ideal_{config['ideal']}"
+run = wandb.init(project="DeepRC_PlainW_StanData", group=group)
+run.name = f"results_idx_{str(args.idx)}"  # += f"_ideal_{config['ideal']}"
 
 # if config['run'] == "run_0":
 #    assert not bool(args.ideal)
@@ -103,9 +109,9 @@ task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
 # Get data loaders for training set and training-, validation-, and test-set in evaluation mode (=no random subsampling)
 trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
     task_definition=task_definition,
-    metadata_file=f"{root_dir}/datasets/test/{config['dataset']}/metadata.tsv",
-    n_worker_processes=4,
-    repertoiresdata_path=f"{root_dir}/datasets/test/{config['dataset']}/repertoires",
+    metadata_file=f"{root_dir}/datasets/all_observed/{config['dataset']}/metadata.tsv",
+    n_worker_processes=8,
+    repertoiresdata_path=f"{root_dir}/datasets/all_observed/{config['dataset']}/repertoires",
     metadata_file_id_column='ID',
     sequence_column='amino_acid',
     sequence_counts_column='templates',
@@ -115,7 +121,7 @@ trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloade
 
     # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
 )
-
+# exit(77)
 #
 # Create DeepRC Network
 #
