@@ -10,6 +10,7 @@ Contact -- widrich@ml.jku.at
 import argparse
 
 import numpy as np
+import pandas as pd
 import torch
 from deeprc.task_definitions import TaskDefinition, BinaryTarget, MulticlassTarget, RegressionTarget, Sequence_Target
 from deeprc.dataset_readers import make_dataloaders, no_sequence_count_scaling
@@ -85,6 +86,7 @@ config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "dataset": "n_600_wr_0.050%_po_100%", "pos_weight": 1, "train_then_freeze": False,
           "staged_training": False, "plain_DeepRC": True, "Branch": "AdHoc1"}  # , "tag": ["AdHoc1.3.1"]}
 
+
 # all_observed datasets:
 # n_600_wr_0.100%_po_100%
 # n_600_wr_0.300%_po_100%
@@ -102,6 +104,36 @@ config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
 # n_600_wr_0.500%_po_80%_sw_50%
 # n_600_wr_0.700%_po_80%_sw_50%
 
+
+def get_sample_reps(num_per_class: int = 2, both_sides: bool = True):
+    main_path = f"{root_dir}/datasets/{dataset_type}/{config['dataset']}"
+    meta_path = f"{main_path}/metadata.tsv"
+    meta_csv = pd.read_csv(meta_path, sep="\t")
+    groups = meta_csv.groupby('binary_target_1')
+
+    first_idx = list(range(num_per_class))
+    second_idx = [-i for i in range(1, num_per_class + 1)] if both_sides else []
+    neg_reps = groups.get_group('-').iloc[[*first_idx, *second_idx]]["ID"].tolist()
+    pos_reps = groups.get_group('+').iloc[[*first_idx, *second_idx]]["ID"].tolist()
+
+    file_names = [*neg_reps, *pos_reps]
+    rep_labels = ["-"] * num_per_class * (int(both_sides) + 1) + ["+"] * num_per_class * (int(both_sides) + 1)
+    meta_sample = {"meta_file": pd.DataFrame({"repertoire": file_names, "label": rep_labels})}
+    reps = {name: pd.read_csv(f"{main_path}/repertoires/{name}", sep="\t") for name in file_names}
+    return {**meta_sample, **reps}
+
+
+def log_reps(df_dict: dict):
+    for k, v in df_dict.items():
+        table = wandb.Table(dataframe=v)
+        table_artifact = wandb.Artifact(k, type="dataset")
+        table_artifact.add(table, k)
+        # Log the table to visualize with a run...
+        run.log({k: table})
+        # and Log as an Artifact to increase the available row limit!
+        run.log_artifact(table_artifact)
+
+
 # Append current timestamp to results directory
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
 
@@ -113,6 +145,11 @@ else:
     group = f"TE_n_up_{args.n_updates}_pw_{config['pos_weight']}"
 run = wandb.init(project="DeepRC_PlainW_StanData", group=group)  # , tags=config["tag"])
 run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
+
+df_dict = get_sample_reps(2, True)
+log_reps(df_dict)
+wandb.finish()
+exit(7)
 
 wandb.config.update(args)
 wandb.config.update(config)

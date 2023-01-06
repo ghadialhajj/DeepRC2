@@ -61,7 +61,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                      metadata_file_id_column: str = 'ID', metadata_file_column_sep: str = '\t',
                      sequence_column: str = 'amino_acid', sequence_counts_column: str = 'templates',
                      sequence_labels_column: str = 'label', sequence_pools_column: str = "pool_label", repertoire_files_column_sep: str = '\t',
-                     filename_extension: str = '.tsv', h5py_dict: dict = None,
+                     filename_extension: str = '.tsv', h5py_dict: dict = None, all_sets: bool = True,
                      sequence_counts_scaling_fn: Callable = no_sequence_count_scaling, verbose: bool = True) \
         -> Tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
     """Get data loaders for a dataset
@@ -216,32 +216,36 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
     validationset_inds = split_inds.pop(cross_validation_fold - 1)
     trainingset_inds = np.concatenate(split_inds)
 
+    trainingset_dataloader, trainingset_eval_dataloader, validationset_eval_dataloader, testset_eval_dataloader = [None]*4
     #
     # Create datasets and dataloaders for splits
     #
     if verbose:
         print("Creating dataloaders for dataset splits")
 
+    if not all_sets:
+        trainingset_inds = [0, 1]
+
     training_dataset = RepertoireDatasetSubset(
         dataset=full_dataset, indices=trainingset_inds, sample_n_sequences=sample_n_sequences)
     trainingset_dataloader = DataLoader(
         training_dataset, batch_size=batch_size, shuffle=True, num_workers=n_worker_processes,
         collate_fn=no_stack_collate_fn)
+    if all_sets:
+        training_eval_dataset = RepertoireDatasetSubset(
+            dataset=full_dataset, indices=trainingset_inds, sample_n_sequences=None)
+        trainingset_eval_dataloader = DataLoader(
+            training_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
 
-    training_eval_dataset = RepertoireDatasetSubset(
-        dataset=full_dataset, indices=trainingset_inds, sample_n_sequences=None)
-    trainingset_eval_dataloader = DataLoader(
-        training_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
+        validationset_eval_dataset = RepertoireDatasetSubset(
+            dataset=full_dataset, indices=validationset_inds, sample_n_sequences=None)
+        validationset_eval_dataloader = DataLoader(
+            validationset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
 
-    validationset_eval_dataset = RepertoireDatasetSubset(
-        dataset=full_dataset, indices=validationset_inds, sample_n_sequences=None)
-    validationset_eval_dataloader = DataLoader(
-        validationset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
-
-    testset_eval_dataset = RepertoireDatasetSubset(
-        dataset=full_dataset, indices=testset_inds, sample_n_sequences=None)
-    testset_eval_dataloader = DataLoader(
-        testset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
+        testset_eval_dataset = RepertoireDatasetSubset(
+            dataset=full_dataset, indices=testset_inds, sample_n_sequences=None)
+        testset_eval_dataloader = DataLoader(
+            testset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
 
     if verbose:
         print("\tDone!")
