@@ -1,3 +1,4 @@
+print("importing")
 import os
 import shutil
 from random import choices, choice, random
@@ -7,40 +8,48 @@ import pandas as pd
 from deeprc.utils import Timer
 from pathos.multiprocessing import ProcessingPool as Pool
 
+print("imported")
 AA = ('A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y')
-# n_threads = 30
-# n_reps = int(600)
-# prevalence = 0.5
-# SEQ_LENGTH_MEAN = 14.5
-# SEQ_LENGTH_STDDEV = 1.1
-# SEQ_PER_REP_MEAN = 1e5
-# SEQ_PER_REP_STDDEV = 0
-# SIZE_PER_POOL = int(5e7)
-# swap_fraction = 1
-# source_data_path = "/storage/ghadia/DeepRC2/deeprc/datasets/benchmarking1"
-n_threads = 4
-n_reps = int(5)
+n_threads = 60
+n_reps = int(600)
 prevalence = 0.5
 SEQ_LENGTH_MEAN = 14.5
 SEQ_LENGTH_STDDEV = 1.1
-SEQ_PER_REP_MEAN = int(1e3)
+SEQ_PER_REP_MEAN = 1e5
 SEQ_PER_REP_STDDEV = 0
-SIZE_PER_POOL = int(1e5)
-swap_fraction = 1
-source_data_path = "/home/ghadi/PycharmProjects/DeepRC2/deeprc/datasets/benchmarking1"
-wr_list = [1]
-pos = [0.2]
+SIZE_PER_POOL = int(5e7)
+NUM_IN_OBSERVED = None
+PROP_OBSERVED = 0.5  # the proportion of AAs that will be used to replace Z in observed motifs
+swap_fraction = 0.5
+source_data_path = "/storage/ghadia/DeepRC2/deeprc/datasets/SSM2"
+wr_list = [0.15]
+P_FP_GIVEN_NEGATIVE = None  # 0.0015  # WR/(1-WR)
+pos = [0.6, 0.8, 1]
+# n_threads = 4
+# n_reps = int(20)
+# prevalence = 0.5
+# SEQ_LENGTH_MEAN = 14.5
+# SEQ_LENGTH_STDDEV = 1.1
+# SEQ_PER_REP_MEAN = int(1e4)
+# SEQ_PER_REP_STDDEV = 0
+# SIZE_PER_POOL = int(1e5)
+# NUM_IN_OBSERVED = None
+# PROP_OBSERVED = 0.5  # the proportion of AAs that will be used to replace Z in observed motifs
+# # TODO: Should we restrict the number of AAs that can be used for the observed and non observed motifs instances?
+# swap_fraction = 0.5
+# source_data_path = "/home/ghadi/PycharmProjects/DeepRC2/deeprc/datasets/SSM2"
+# P_FP_GIVEN_NEGATIVE = None  # 0.01
+# wr_list = [0.4]
+# pos = [1]
 
-replace_probs = {1: 0.5}
-delete_probs = {1: 0.5}
-n_motifs = 1
+replace_probs = {2: 1}
+delete_probs = None  # {1: 0.5}
+n_motifs = 10
 
 seeds = np.random.randint(0, int(1e6), size=int(n_reps * swap_fraction))
 
 print("Finished defining variables")
 
-
-# return seq
 
 class SequenceChecker():
     def __init__(self, motifs: list, delete_idxs: list, replace_idxs: list):
@@ -107,11 +116,18 @@ class SequenceGenerator():
         self.sequence_checker = SequenceChecker(motifs=self.base_motifs, delete_idxs=list(delete_probs.keys()),
                                                 replace_idxs=list(replace_probs.keys()))
 
-    def _replace_aa(self, motif):
+    def _replace_aa(self, motif, observed: bool):
         idxs = [idx for idx, prob in self.replace_probs.items() if random() < prob]
         for ind in sorted(idxs, reverse=True):
-            motif = motif[:ind] + choice(AA) + motif[ind + 1:]
+            _AA = AA if PROP_OBSERVED is None else self._split_aas()[0] if observed else self._split_aas()[1]
+            motif = motif[:ind] + choice(_AA) + motif[ind + 1:]
         return motif
+
+    def _split_aas(self):
+        # todo: Do we need to shuffle?
+        obs = AA[:int(PROP_OBSERVED * len(AA))]
+        unobs = AA[int(PROP_OBSERVED * len(AA)):]
+        return obs, unobs
 
     def _delete_aas(self, motif):
         idxs = [idx for idx, prob in self.delete_probs.items() if random() < prob]
@@ -119,10 +135,30 @@ class SequenceGenerator():
             motif = motif[:ind] + motif[ind + 1:]
         return motif
 
-    def _prepare_motif(self):
-        motif = choice(self.base_motifs)
+    def _prepare_motif(self, observed: bool):
+        """
+        This function takes in an observed parameter, which determines whether the motif chosen will be from the
+        observed or unobserved set. If NUM_IN_OBSERVED is not set, a random motif from the base_motifs is chosen.
+        Otherwise, if observed is True, the motif chosen will be from the first NUM_IN_OBSERVED elements of base_motifs.
+         If observed is False, the motif chosen will be from the remaining elements of base_motifs.
+
+        The function also applies any replacement or deletion with probabilities specified in the replace_probs and
+        delete_probs attributes of the class.
+        Args:
+            observed (bool): A flag indicating whether the chosen motif should be from the observed or unobserved set.
+
+        Returns:
+            motif (str): The prepared motif.
+        """
+        if NUM_IN_OBSERVED is None:
+            motif = choice(self.base_motifs)
+        else:
+            if observed:
+                motif = choice(self.base_motifs[:NUM_IN_OBSERVED])
+            else:
+                motif = choice(self.base_motifs[NUM_IN_OBSERVED:])
         if self.replace_probs:
-            motif = self._replace_aa(motif=motif)
+            motif = self._replace_aa(motif=motif, observed=observed)
         if self.delete_probs:
             motif = self._delete_aas(motif=motif)
         return motif
@@ -141,8 +177,8 @@ class SequenceGenerator():
         sequence = sequence[:implant_idx] + motif + sequence[implant_idx + len(motif):]
         return "".join(sequence)
 
-    def get_pos_seq(self, sequence: str):
-        motif = self._prepare_motif()
+    def get_pos_seq(self, sequence: str, observed: bool):
+        motif = self._prepare_motif(observed)
         return self._implant_motif(motif, sequence)
 
     def get_neg_seq(self, length):
@@ -151,31 +187,24 @@ class SequenceGenerator():
         return seq if valid else self.get_neg_seq(length)
 
 
-def split_disease_pool(disease_pool):
-    split_proportion = 0.5
-    observed = disease_pool[:int(len(disease_pool) * split_proportion)]
-    unobserved = disease_pool[int(len(disease_pool) * split_proportion):]
+def get_disease_specific_pool(n_sequences: int):
+    base_pool1 = get_base_pool(n_sequences=int(n_sequences * 0.5))
+    base_pool2 = get_base_pool(n_sequences=int(n_sequences * 0.5))
+    observed = [sequence_generator.get_pos_seq(sequence, observed=True) for sequence in base_pool1]
+    unobserved = [sequence_generator.get_pos_seq(sequence, observed=False) for sequence in base_pool2]
     return observed, unobserved
 
 
-def get_base_pool(n_sequences: int):
-    return [sequence_generator.get_neg_seq(int(np.random.normal(SEQ_LENGTH_MEAN, SEQ_LENGTH_STDDEV))) for _ in
-            range(n_sequences)]
-
-
-def get_disease_specific_pool(n_sequences: int):
-    base_pool = get_base_pool(n_sequences=n_sequences)
-    return [sequence_generator.get_pos_seq(sequence) for sequence in base_pool]
-
-
-def get_positive_bag(split_disease_pool: list, unsplit_disease_pool: list, base_pool: list,
+def get_positive_bag(observed_disease_pool: list, unobserved_disease_pool: list, base_pool: list,
                      po: float, puo: float, seed: int = None, n_sequences: int = None):
     if seed is not None:
         np.random.seed(seed)
     seq_pools = np.random.choice(np.asarray([0, 1, 2]), p=[po, puo, 1 - (po + puo)], size=n_sequences).tolist()
 
-    rep = [choice([split_disease_pool, unsplit_disease_pool, base_pool][pool]) for pool in seq_pools]  # change to numpy
-    label = np.where(np.array(seq_pools) == 0, 1, 0)  # [(pool < 2) * 1 for pool in seq_pools]
+    rep = [choice([observed_disease_pool, unobserved_disease_pool, base_pool][pool]) for pool in seq_pools]
+    if P_FP_GIVEN_NEGATIVE is not None:
+        seq_pools = [3 if (x == 2 and np.random.rand() < P_FP_GIVEN_NEGATIVE) else x for x in seq_pools]
+    label = np.isin(seq_pools, [0, 3]) * 1  # np.where(np.array(seq_pools) == 0, 1, 0)
     ret_dict = {"amino_acid": rep, "templates": [1] * len(rep), "pool_label": seq_pools, "label": label}
     emp = not bool(ret_dict["templates"])
     return emp, ret_dict
@@ -197,13 +226,6 @@ def get_bag(po, puo, status, seed=None):
         else:
             emp, return_dict = get_negative_bag(base_pool, n_sequences)
     return return_dict
-
-
-def create_pools(size_per_pool: int = SIZE_PER_POOL):
-    base_pool = get_base_pool(size_per_pool)
-    disease_pool = get_disease_specific_pool(size_per_pool)
-    observed, unobserved = split_disease_pool(disease_pool)
-    return base_pool, observed, unobserved
 
 
 def find_indices(lst, char, n):
@@ -232,16 +254,24 @@ def unpack_dicts(*dicts):
     return combined
 
 
-def create_dataset(wr: float, po: float = 0.8, swap_fraction: float = 0.5, hypo_reps: bool = False):
+def create_dataset(wr: float, po: float = 0.8, hypo_reps: bool = False, po2: float = None):
     """
     :param wr: proportion of positive sequences (not percentage)
     :param po: proportion of observed sequences (not percentage)
     """
+    if po2 is None:
+        po2 = round(1 - po, 2)
     with Timer("first"):
 
-        output_path = source_data_path + f"/n_{n_reps}_wr_{wr:.3%}_po_{po:.0%}"
+        output_path = source_data_path + f"/n_{n_reps}_wr_{wr:.3%}_po_{po:.0%}_nmotif_{n_motifs}"
         if swap_fraction != 1:
             output_path = output_path + f"_sw_{swap_fraction:.0%}"
+        if P_FP_GIVEN_NEGATIVE is not None:
+            output_path = output_path + f"_fpgn_{P_FP_GIVEN_NEGATIVE:.3%}"
+        if NUM_IN_OBSERVED is not None:
+            output_path = output_path + f"_nmio_{NUM_IN_OBSERVED}"
+        if po2 is not None:
+            output_path = output_path + f"_po2_{po2:.0%}"
         # output_path = source_data_path + f"/delete"
         print(f"\033[44;97m {output_path} \033[0m")
         # output_path = source_data_path + f"/n_{n_reps}_wr_{wr}"
@@ -266,7 +296,7 @@ def create_dataset(wr: float, po: float = 0.8, swap_fraction: float = 0.5, hypo_
     with Timer("second set"):
         with Pool(n_threads) as pool:
             for idx, result in enumerate(
-                    pool.map(get_bag, [(1 - po) * wr] * n_reps_second_set, [po * wr] * n_reps_second_set,
+                    pool.map(get_bag, [po2 * wr] * n_reps_second_set, [(1 - po2) * wr] * n_reps_second_set,
                              statuses[n_reps_first_set:])):
                 basic_list.append(result)
 
@@ -290,14 +320,65 @@ def create_dataset(wr: float, po: float = 0.8, swap_fraction: float = 0.5, hypo_
             pd.DataFrame(rep).to_csv(output_path + "/repertoires/" + meta_dict["ID"][ind], sep="\t", index=False)
 
 
-if __name__ == "__main__":
+def create_poolswmt(size_per_pool: int = SIZE_PER_POOL):
+    base_pool = get_base_pool(size_per_pool)
+    observed, unobserved = get_disease_specific_pool(size_per_pool)
+    return base_pool, observed, unobserved
 
+
+def get_base_pool(n_sequences: int):
+    with Pool(processes=n_threads) as pool:
+        result = pool.map(sequence_generator.get_neg_seq,
+                          [int(np.random.normal(SEQ_LENGTH_MEAN, SEQ_LENGTH_STDDEV)) for _ in range(n_sequences)])
+    return result
+
+
+if __name__ == "__main__":
+    create_from_saved = False
     sequence_generator = SequenceGenerator(replace_probs=replace_probs, delete_probs=delete_probs, n_motifs=n_motifs)
     print("Creating the pools")
-    with Timer(name="create pools"):
-        base_pool, observed, unobserved = create_pools()
+    if not create_from_saved:
+        with Timer(name="create pools"):
+            base_pool, observed, unobserved = create_poolswmt()
+            # s = {"AA": base_pool}
+            # pd.DataFrame(s).to_csv("base_pool_nomt.tsv", sep="\t", index=False)
+            # s = {"AA": observed}
+            # pd.DataFrame(s).to_csv("observed_nomt.tsv", sep="\t", index=False)
+            # s = {"AA": unobserved}
+            # pd.DataFrame(s).to_csv("unobserved_nomt.tsv", sep="\t", index=False)
+    else:
+        base_path = "/home/ghadi/PycharmProjects/DeepRC2/base_pool_mt.tsv"
+        obse_path = "/home/ghadi/PycharmProjects/DeepRC2/observed_mt.tsv"
+        unob_path = "/home/ghadi/PycharmProjects/DeepRC2/unobserved_mt.tsv"
+
+        base_pool = pd.read_csv(base_path)
+        observed = pd.read_csv(obse_path)
+        unobserved = pd.read_csv(unob_path)
+
+    # If you want sw*n_reps to have **only** obs and the other (1-sw)*n_reps to have **only** unobs, use po=1 and po2=0,
+    # with swap_fraction determining the proportion between the two
     for wr in wr_list:
         print(f"witness rate: {wr}")
         for po in pos:
-            hypo_reps = bool(po == 1)
-            create_dataset(wr / 100, po=po, swap_fraction=swap_fraction, hypo_reps=hypo_reps)
+            hypo_reps = False  # bool(po == 1)
+            create_dataset(wr / 100, po=po, hypo_reps=hypo_reps)
+
+    # n_seq = int(5e7)
+    # with Timer(name="No MT"):
+    #
+    # with Timer(name="w/MT"):
+    #     base_pool, observed, unobserved = create_poolswmt(n_seq)
+    #     s = {"AA": [base_pool]}
+    #     pd.DataFrame(s).to_csv("base_pool_mt.tsv", sep="\t", index=False)
+    #     s = {"AA": [observed]}
+    #     pd.DataFrame(s).to_csv("observed_mt.tsv", sep="\t", index=False)
+    #     s = {"AA": [unobserved]}
+    #     pd.DataFrame(s).to_csv("unobserved_mt.tsv", sep="\t", index=False)
+
+    # with Timer(name="No MT"):
+    #     res = get_base_pool(n_seq)
+    #     print(len(res))
+    #
+    # with Timer(name="w/MT"):
+    #     res = get_base_pool(n_seq)
+    #     print(len(res))

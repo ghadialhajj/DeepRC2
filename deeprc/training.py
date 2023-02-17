@@ -62,7 +62,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
           num_torch_threads: int = 3, learning_rate: float = 1e-4, l1_weight_decay: float = 0,
           l2_weight_decay: float = 0, log_training_stats_at: int = int(1e2), evaluate_at: int = int(5e3),
           ignore_missing_target_values: bool = True, prop: float = 0.7, train_then_freeze: bool = True,
-          staged_training: bool = True, plain_DeepRC: bool = False, log: bool = True):
+          staged_training: bool = True, plain_DeepRC: bool = False, log: bool = True, rep_loss_only=False):
     """Train a DeepRC model on a given dataset on tasks specified in `task_definition`
      
      Model with lowest validation set loss on target `early_stopping_target_id` will be taken as final model (=early
@@ -205,7 +205,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         loss = pred_loss + l1reg_loss * l1_weight_decay
                     else:
                         if staged_training:
-                            loss = pred_loss * int(second_phase) + l1reg_loss * l1_weight_decay + attention_loss
+                            loss = pred_loss * second_phase + l1reg_loss * l1_weight_decay + attention_loss * (
+                                not rep_loss_only)
                         else:
                             loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
 
@@ -221,8 +222,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
                     # Add to tensorboard
                     if update % log_training_stats_at == 0 or update == 1:
-                        if update != 1 and log:
-                            logg_and_att = True if update % (4*log_training_stats_at) == 0 else False
+                        if log:
+                            logg_and_att = True if update == 1 or update % (4 * log_training_stats_at) == 0 else False
                             logger.log_stats(model=model, device=device, step=update, logg_and_att=logg_and_att)
                         group = 'training/'
                         # Loop through tasks and add losses to tensorboard

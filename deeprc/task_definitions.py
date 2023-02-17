@@ -241,7 +241,7 @@ class Sequence_Target(Target):
         bacc = metrics.balanced_accuracy_score(y_true=labels, y_pred=predictions_thresholded)
         f1 = metrics.f1_score(y_true=labels, y_pred=predictions_thresholded, average='binary', pos_label=1)
         loss = self.loss_function(raw_outputs=raw_outputs, targets=targets).detach().mean().cpu().item()
-        return dict(pr_auc=pr_auc, roc_auc=roc_auc, seq_bacc=bacc, seq_f1=f1, seq_loss=loss,
+        return dict(pr_auc=pr_auc, seq_roc_auc=roc_auc, seq_bacc=bacc, seq_f1=f1, seq_loss=loss,
                     seq_avg_score_diff=avg_score_diff)
 
 
