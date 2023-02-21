@@ -71,7 +71,8 @@ def url_get(url: str, dst: str, verbose: bool = True):
 
 
 class Logger():
-    def __init__(self, dataloaders):
+    def __init__(self, dataloaders, with_FPs=False):
+        self.with_FPs = with_FPs
         self.dataloaders = dataloaders
 
     def log_stats(self, model: torch.nn.Module, device=torch.device('cuda:0'), step: int = 0,
@@ -93,8 +94,11 @@ class Logger():
                           plot_title=f"Positive (B) and Negative (R) TSNEcomp", step=step, method="TSNE")
 
     def log_attention(self, dl_name, split_attentions, step):
-        self.plot_histogram(data={"observed": split_attentions[0],
-                                  "unobserved": split_attentions[1], "negative": split_attentions[2]}, dl_name=dl_name,
+        data = {"observed": split_attentions[0],
+                "unobserved": split_attentions[1], "negative": split_attentions[2]}
+        if self.with_FPs:
+            data.update({"false_positives": split_attentions[3]})
+        self.plot_histogram(data, dl_name=dl_name,
                             plot_title=f"Positive (B) and Negative (R) Raw Att", xaxis_title="Attention value",
                             step=step)
 
@@ -129,7 +133,7 @@ class Logger():
                                                                                                             device=device,
                                                                                                             show_progress=show_progress)
         split_logits = self.split_outputs(all_logits, all_targets)
-        split_attentions = self.split_outputs(all_attentions, all_seq_pools, three_classes=True)
+        split_attentions = self.split_outputs(all_attentions, all_seq_pools, sequence_level=True)
         split_rep_embs = self.split_outputs(all_emb_reps, all_targets, flatten=False)
         return split_logits, split_attentions, split_rep_embs
 
@@ -145,7 +149,7 @@ class Logger():
 
         fig.update_layout(title=plot_title, xaxis_title=xaxis_title, yaxis_title="Percentage", barmode='overlay')
         fig.update_traces(autobinx=False, selector=dict(type='histogram'))
-        
+
         # Log the plot
         wandb.log({f"{xaxis_title}/{dl_name}": fig}, step=step)
 
@@ -166,8 +170,7 @@ class Logger():
         # Log the plot
         wandb.log({f"Repertoire Embeddings/{method}/{dl_name}": fig}, step=step)
 
-    @staticmethod
-    def split_outputs(all_values, all_targets, flatten: bool = True, three_classes: bool = False):
+    def split_outputs(self, all_values, all_targets, flatten: bool = True, sequence_level: bool = False):
         """
         Split logits (or attentions) between positive and negative repertoires (or sequences)
         Args:
@@ -180,7 +183,17 @@ class Logger():
         """
         all_values = all_values.detach().cpu()
         all_targets = all_targets.flatten().detach().cpu()
-        if not three_classes:
+        if sequence_level:
+            observed = all_values[np.where(all_targets == 0)[0]].detach().cpu().numpy().flatten().tolist()
+            not_observed = all_values[np.where(all_targets == 1)[0]].detach().cpu().numpy().flatten().tolist()
+            negative = all_values[np.where(all_targets == 2)[0]].detach().cpu().numpy().flatten().tolist()
+            if not self.with_FPs:
+                return observed, not_observed, negative
+            else:
+                false_positives = all_values[np.where(all_targets == 3)[0]].detach().cpu().numpy().flatten().tolist()
+            return observed, not_observed, negative, false_positives
+
+        else:
             pos_vals = all_values[np.where(all_targets)[0]].detach().cpu().numpy()
             neg_vals = all_values[np.where(np.logical_not(all_targets))[0]].detach().cpu().numpy()
             if flatten:
@@ -188,13 +201,6 @@ class Logger():
                 neg_vals = neg_vals.flatten()
 
             return pos_vals, neg_vals
-
-        else:
-            observed = all_values[np.where(all_targets == 0)[0]].detach().cpu().numpy().flatten().tolist()
-            not_observed = all_values[np.where(all_targets == 1)[0]].detach().cpu().numpy().flatten().tolist()
-            negative = all_values[np.where(all_targets == 2)[0]].detach().cpu().numpy().flatten().tolist()
-
-            return observed, not_observed, negative
 
 
 def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
