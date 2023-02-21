@@ -20,7 +20,7 @@ SEQ_PER_REP_STDDEV = 0
 SIZE_PER_POOL = int(5e7)
 NUM_IN_OBSERVED = None
 PROP_OBSERVED = 0.5  # the proportion of AAs that will be used to replace Z in observed motifs
-swap_fraction = 0.5
+swap_fraction = [0.2, 0.5, 0.8]
 source_data_path = "/storage/ghadia/DeepRC2/deeprc/datasets/SSM2"
 wr_list = [0.15]
 P_FP_GIVEN_NEGATIVE = None  # 0.0015  # WR/(1-WR)
@@ -46,7 +46,6 @@ replace_probs = {2: 1}
 delete_probs = None  # {1: 0.5}
 n_motifs = 10
 
-seeds = np.random.randint(0, int(1e6), size=int(n_reps * swap_fraction))
 
 print("Finished defining variables")
 
@@ -254,7 +253,7 @@ def unpack_dicts(*dicts):
     return combined
 
 
-def create_dataset(wr: float, po: float = 0.8, hypo_reps: bool = False, po2: float = None):
+def create_dataset(wr: float, po: float = 0.8, hypo_reps: bool = False, po2: float = None, swap_fraction: float = 0.5):
     """
     :param wr: proportion of positive sequences (not percentage)
     :param po: proportion of observed sequences (not percentage)
@@ -340,12 +339,6 @@ if __name__ == "__main__":
     if not create_from_saved:
         with Timer(name="create pools"):
             base_pool, observed, unobserved = create_poolswmt()
-            # s = {"AA": base_pool}
-            # pd.DataFrame(s).to_csv("base_pool_nomt.tsv", sep="\t", index=False)
-            # s = {"AA": observed}
-            # pd.DataFrame(s).to_csv("observed_nomt.tsv", sep="\t", index=False)
-            # s = {"AA": unobserved}
-            # pd.DataFrame(s).to_csv("unobserved_nomt.tsv", sep="\t", index=False)
     else:
         base_path = "/home/ghadi/PycharmProjects/DeepRC2/base_pool_mt.tsv"
         obse_path = "/home/ghadi/PycharmProjects/DeepRC2/observed_mt.tsv"
@@ -359,26 +352,8 @@ if __name__ == "__main__":
     # with swap_fraction determining the proportion between the two
     for wr in wr_list:
         print(f"witness rate: {wr}")
-        for po in pos:
-            hypo_reps = False  # bool(po == 1)
-            create_dataset(wr / 100, po=po, hypo_reps=hypo_reps)
-
-    # n_seq = int(5e7)
-    # with Timer(name="No MT"):
-    #
-    # with Timer(name="w/MT"):
-    #     base_pool, observed, unobserved = create_poolswmt(n_seq)
-    #     s = {"AA": [base_pool]}
-    #     pd.DataFrame(s).to_csv("base_pool_mt.tsv", sep="\t", index=False)
-    #     s = {"AA": [observed]}
-    #     pd.DataFrame(s).to_csv("observed_mt.tsv", sep="\t", index=False)
-    #     s = {"AA": [unobserved]}
-    #     pd.DataFrame(s).to_csv("unobserved_mt.tsv", sep="\t", index=False)
-
-    # with Timer(name="No MT"):
-    #     res = get_base_pool(n_seq)
-    #     print(len(res))
-    #
-    # with Timer(name="w/MT"):
-    #     res = get_base_pool(n_seq)
-    #     print(len(res))
+        for sw in swap_fraction:
+            seeds = np.random.randint(0, int(1e6), size=int(n_reps * sw))
+            for po in pos:
+                hypo_reps = False  # bool(po == 1)
+                create_dataset(wr / 100, po=po, hypo_reps=hypo_reps, swap_fraction=sw)
