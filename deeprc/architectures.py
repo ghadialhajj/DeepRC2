@@ -443,24 +443,26 @@ class DeepRC(nn.Module):
         # Compute representation per bag (N times shape (d_v,))
         mb_emb_reps_after_attention = []
         start_i = 0
-        for n_seqs in n_sequences_per_bag:
-            # Get sequence embedding h() for single bag (shape: (n_sequences_per_bag, d_v))
-            attention_weights = mb_attention_weights[start_i:start_i + n_seqs]
-            # Get attention weights for single bag (shape: (n_sequences_per_bag, 1))
-            emb_seqs = mb_emb_seqs[start_i:start_i + n_seqs]
-            # Calculate attention activations (softmax over n_sequences_per_bag) (shape: (n_sequences_per_bag, 1))
-            attention_weights = torch.softmax(attention_weights, dim=0)
-            # Apply attention weights to sequence features (shape: (n_sequences_per_bag, d_v))
-            emb_reps_after_attention = emb_seqs * attention_weights
-            # Compute weighted sum over sequence features after attention (format: (d_v,))
-            mb_emb_reps_after_attention.append(emb_reps_after_attention.sum(dim=0))
-            start_i += n_seqs
+        predictions = [torch.max(mb_attention_weights[start_i - n_seqs:start_i])
+                       for start_i, n_seqs in zip(torch.cumsum(n_sequences_per_bag, 0), n_sequences_per_bag)]
+        # for n_seqs in n_sequences_per_bag:
+        #     # Get sequence embedding h() for single bag (shape: (n_sequences_per_bag, d_v))
+        #     attention_weights = mb_attention_weights[start_i:start_i + n_seqs]
+        #     # Get attention weights for single bag (shape: (n_sequences_per_bag, 1))
+        #     emb_seqs = mb_emb_seqs[start_i:start_i + n_seqs]
+        #     # Calculate attention activations (softmax over n_sequences_per_bag) (shape: (n_sequences_per_bag, 1))
+        #     attention_weights = torch.softmax(attention_weights, dim=0)
+        #     # Apply attention weights to sequence features (shape: (n_sequences_per_bag, d_v))
+        #     emb_reps_after_attention = emb_seqs * attention_weights
+        #     # Compute weighted sum over sequence features after attention (format: (d_v,))
+        #     mb_emb_reps_after_attention.append(emb_reps_after_attention.sum(dim=0))
+        #     start_i += n_seqs
 
         # Stack representations of bags (shape (N, d_v))
         emb_reps_after_attention = torch.stack(mb_emb_reps_after_attention, dim=0)
 
         # Calculate predictions (shape (N, n_outputs))
-        predictions = self.output_nn(emb_reps_after_attention)
+        predictions = torch.stack(predictions)
 
         return predictions, mb_attention_weights, emb_reps_after_attention
 

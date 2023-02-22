@@ -61,10 +61,10 @@ device = torch.device(device_name)
 seeds = [92, 9241, 5149, 41, 720, 813, 48525]
 
 root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
-dataset_type = "all_observed10"
+dataset_type = "test"
 base_results_dir = "/results/singletask_cnn/ideal"
 strategies = ["PDRC"]
-datasets = ["n_600_wr_0.150%25_po_100%25"]
+datasets = ["n_20_op_1_po_0.100%25_pu_0"]
 print("defined variables")
 
 
@@ -144,7 +144,7 @@ for datastet in datasets:
         torch.manual_seed(seeds[args.idx])
         np.random.seed(seeds[args.idx])
 
-        run = wandb.init(project="SSM2", group=group, reinit=True)  # , tags=config["tag"])
+        run = wandb.init(project="Testing", group=group, reinit=True)  # , tags=config["tag"])
         run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
         # DeepRC_PlainW_StanData, Explore_wFPs
 
