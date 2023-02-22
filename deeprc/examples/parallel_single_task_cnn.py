@@ -75,10 +75,9 @@ strategies = ["PDRC"]
 # datasets = ["n_600_wr_0.150%_po_5%_nmotif_10_fpgn_0.150%", "n_600_wr_0.150%_po_20%_nmotif_10_fpgn_0.150%",
 #             "n_600_wr_0.150%_po_50%_nmotif_10_fpgn_0.150%"]
 # datasets = ["n_600_wr_0.150%_po_20%_nmotif_10_sw_50%_po2_1%"]
-# datasets = ["n_600_wr_0.150%_po_100%_nmotif_10_sw_20%_po2_0%", "n_600_wr_0.150%_po_80%_nmotif_10_sw_20%_po2_20%",
-#             "n_600_wr_0.150%_po_60%_nmotif_10_sw_20%_po2_40%", "n_600_wr_0.150%_po_100%_nmotif_10_sw_80%_po2_0%",
-#             "n_600_wr_0.150%_po_80%_nmotif_10_sw_80%_po2_20%", "n_600_wr_0.150%_po_60%_nmotif_10_sw_80%_po2_40%"]
-datasets = ["n_600_wr_0.150%_po_100%_l"]
+datasets = ["n_600_wr_0.150%_po_100%_nmotif_10_sw_20%_po2_0%", "n_600_wr_0.150%_po_80%_nmotif_10_sw_20%_po2_20%",
+            "n_600_wr_0.150%_po_60%_nmotif_10_sw_20%_po2_40%", "n_600_wr_0.150%_po_100%_nmotif_10_sw_80%_po2_0%",
+            "n_600_wr_0.150%_po_80%_nmotif_10_sw_80%_po2_20%", "n_600_wr_0.150%_po_60%_nmotif_10_sw_80%_po2_40%"]
 print("defined variables")
 
 
