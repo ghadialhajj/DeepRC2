@@ -116,7 +116,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
     """
 
     if log:
-        logger.log_stats(model=model, device=device, step=0, logg_and_att=True)
+        logger.log_stats(model=model, device=device, step=0, log_and_att_hists=True)
 
     os.makedirs(results_directory, exist_ok=True)
 
@@ -223,8 +223,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     # Add to tensorboard
                     if update % log_training_stats_at == 0 or update == 1:
                         if log:
-                            logg_and_att = True if update == 1 or update % (4 * log_training_stats_at) == 0 else False
-                            logger.log_stats(model=model, device=device, step=update, logg_and_att=logg_and_att)
+                            logg_and_att_hists = True if update == 1 or update % (4 * log_training_stats_at) == 0 else False
+                            logger.log_stats(model=model, device=device, step=update, log_and_att_hists=logg_and_att_hists)
                         group = 'training/'
                         # Loop through tasks and add losses to tensorboard
                         pred_losses = task_definition.get_losses(raw_outputs=logit_outputs, targets=targets)
@@ -302,7 +302,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
             saver_loader.save_to_file(filename=f'best_u{update}.tar.gzip')
             print('Finished Training!')
             if log:
-                logger.log_stats(model=model, device=device, step=n_updates, logg_and_att=True)
+                logger.log_stats(model=model, device=device, step=n_updates, log_and_att_hists=True)
     except Exception as e:
         with open(logfile, 'a') as lf:
             print(f"Exception: {e}", file=lf)

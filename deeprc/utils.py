@@ -76,7 +76,7 @@ class Logger():
         self.dataloaders = dataloaders
 
     def log_stats(self, model: torch.nn.Module, device=torch.device('cuda:0'), step: int = 0,
-                  logg_and_att: bool = True):
+                  log_and_att_hists: bool = True):
         """
         Logs model statistics including repertoire embeddings, logits, and attentions for each dataloader.
         """
@@ -85,7 +85,7 @@ class Logger():
             split_rep_embs_pca = perform_pca(split_rep_embs)
             split_rep_embs_tsne = perform_tsne(split_rep_embs)
             self.log_repertoire_rep(dl_name, split_rep_embs_pca, split_rep_embs_tsne, step)
-            if logg_and_att:
+            if log_and_att_hists:
                 self.log_logits(dl_name, split_logits, step)
 
                 self.log_attention(dl_name, split_attentions, step)

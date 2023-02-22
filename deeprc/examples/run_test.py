@@ -109,7 +109,7 @@ for datastet in datasets:
     )
     dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval,
                "testset_eval": testset_eval}
-    logger = Logger(dataloaders=dl_dict, with_FPs=True)
+    logger = Logger(dataloaders=dl_dict)
 
     for strategy in strategies:
         print(strategy)
@@ -183,7 +183,7 @@ for datastet in datasets:
               prop=config["prop"],
               log_training_stats_at=args.log_training_stats_at,  # Here our results and trained models will be stored
               train_then_freeze=config["train_then_freeze"], staged_training=config["staged_training"],
-              plain_DeepRC=config["plain_DeepRC"], log=True)
+              plain_DeepRC=config["plain_DeepRC"], log=False)
 
         # logger.log_stats(model=model, device=device, step=args.n_updates)
 
