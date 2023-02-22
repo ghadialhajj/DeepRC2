@@ -75,7 +75,7 @@ strategies = ["PDRC"]
 # datasets = ["n_600_wr_0.150%_po_5%_nmotif_10_fpgn_0.150%", "n_600_wr_0.150%_po_20%_nmotif_10_fpgn_0.150%",
 #             "n_600_wr_0.150%_po_50%_nmotif_10_fpgn_0.150%"]
 # datasets = ["n_600_wr_0.150%_po_20%_nmotif_10_sw_50%_po2_1%"]
-datasets = ["n_600_wr_1.500%_po_100%"]
+datasets = ["n_600_wr_1.000%_po_100%"]
 print("defined variables")
 
 

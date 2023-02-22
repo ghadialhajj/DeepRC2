@@ -443,7 +443,9 @@ class DeepRC(nn.Module):
         # Compute representation per bag (N times shape (d_v,))
         mb_emb_reps_after_attention = []
         start_i = 0
-        predictions = [torch.max(mb_attention_weights[start_i - n_seqs:start_i])
+        predictions = [torch.sum(
+            torch.softmax(mb_attention_weights[start_i - n_seqs:start_i], 0) * mb_attention_weights[
+                                                                               start_i - n_seqs:start_i])
                        for start_i, n_seqs in zip(torch.cumsum(n_sequences_per_bag, 0), n_sequences_per_bag)]
         # for n_seqs in n_sequences_per_bag:
         #     # Get sequence embedding h() for single bag (shape: (n_sequences_per_bag, d_v))
@@ -549,7 +551,7 @@ class DeepRC(nn.Module):
                     device=self.device,
                     dtype=self.embedding_dtype)
                 sequence_labels_mb = sequence_labels[
-                                      mb_i * self.reduction_mb_size:(mb_i + 1) * self.reduction_mb_size].to(
+                                     mb_i * self.reduction_mb_size:(mb_i + 1) * self.reduction_mb_size].to(
                     device=self.device, dtype=torch.long)
 
                 sequence_lengths_mb = sequence_lengths[
