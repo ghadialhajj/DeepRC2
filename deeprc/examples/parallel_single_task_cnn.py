@@ -60,8 +60,8 @@ device = torch.device(device_name)
 
 seeds = [92, 9241, 5149, 41, 720, 813, 48525]
 
-root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
-# root_dir = "/storage/ghadia/DeepRC2/deeprc"
+# root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
+root_dir = "/storage/ghadia/DeepRC2/deeprc"
 dataset_type = "all_observed10"
 # root_dir = "/itf-fi-ml/shared/users/ghadia/deeprc"
 # root_dir = "/fp/homes01/u01/ec-ghadia/DeepRC2/deeprc"
@@ -75,9 +75,7 @@ strategies = ["PDRC"]
 # datasets = ["n_600_wr_0.150%_po_5%_nmotif_10_fpgn_0.150%", "n_600_wr_0.150%_po_20%_nmotif_10_fpgn_0.150%",
 #             "n_600_wr_0.150%_po_50%_nmotif_10_fpgn_0.150%"]
 # datasets = ["n_600_wr_0.150%_po_20%_nmotif_10_sw_50%_po2_1%"]
-datasets = ["n_600_wr_0.150%_po_100%_nmotif_10_sw_20%_po2_0%", "n_600_wr_0.150%_po_80%_nmotif_10_sw_20%_po2_20%",
-            "n_600_wr_0.150%_po_60%_nmotif_10_sw_20%_po2_40%", "n_600_wr_0.150%_po_100%_nmotif_10_sw_80%_po2_0%",
-            "n_600_wr_0.150%_po_80%_nmotif_10_sw_80%_po2_20%", "n_600_wr_0.150%_po_60%_nmotif_10_sw_80%_po2_40%"]
+datasets = ["n_600_wr_3.000%_po_100%"]
 print("defined variables")
 
 
