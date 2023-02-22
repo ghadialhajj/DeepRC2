@@ -459,7 +459,7 @@ class DeepRC(nn.Module):
         #     start_i += n_seqs
 
         # Stack representations of bags (shape (N, d_v))
-        emb_reps_after_attention = torch.Tensor([0])  # torch.stack(mb_emb_reps_after_attention, dim=0)
+        emb_reps_after_attention = torch.Tensor([[0], [1]])  # torch.stack(mb_emb_reps_after_attention, dim=0)
 
         # Calculate predictions (shape (N, n_outputs))
         predictions = torch.stack(predictions).unsqueeze(1)

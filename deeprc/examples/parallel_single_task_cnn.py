@@ -55,7 +55,7 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:0"  # + str(int((args.ideal + args.idx)%2))
+device_name = "cuda:1"  # + str(int((args.ideal + args.idx)%2))
 device = torch.device(device_name)
 
 seeds = [92, 9241, 5149, 41, 720, 813, 48525]
@@ -75,7 +75,7 @@ strategies = ["PDRC"]
 # datasets = ["n_600_wr_0.150%_po_5%_nmotif_10_fpgn_0.150%", "n_600_wr_0.150%_po_20%_nmotif_10_fpgn_0.150%",
 #             "n_600_wr_0.150%_po_50%_nmotif_10_fpgn_0.150%"]
 # datasets = ["n_600_wr_0.150%_po_20%_nmotif_10_sw_50%_po2_1%"]
-datasets = ["n_600_wr_3.000%_po_100%"]
+datasets = ["n_600_wr_1.500%_po_100%"]
 print("defined variables")
 
 
@@ -155,7 +155,7 @@ for datastet in datasets:
     )
     dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval,
                "testset_eval": testset_eval}
-    logger = Logger(dataloaders=dl_dict, with_FPs=True)
+    logger = Logger(dataloaders=dl_dict)
 
     for strategy in strategies:
         print(strategy)
@@ -190,7 +190,7 @@ for datastet in datasets:
         torch.manual_seed(seeds[args.idx])
         np.random.seed(seeds[args.idx])
 
-        run = wandb.init(project="SSM2", group=group, reinit=True)  # , tags=config["tag"])
+        run = wandb.init(project="Knut", group=group, reinit=True)  # , tags=config["tag"])
         run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
         # DeepRC_PlainW_StanData, Explore_wFPs
         if args.idx == 0:
@@ -232,7 +232,7 @@ for datastet in datasets:
               prop=config["prop"],
               log_training_stats_at=args.log_training_stats_at,  # Here our results and trained models will be stored
               train_then_freeze=config["train_then_freeze"], staged_training=config["staged_training"],
-              plain_DeepRC=config["plain_DeepRC"], log=True)
+              plain_DeepRC=config["plain_DeepRC"], log=False)
 
         # logger.log_stats(model=model, device=device, step=args.n_updates)
 
