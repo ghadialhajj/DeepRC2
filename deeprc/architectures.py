@@ -462,7 +462,7 @@ class DeepRC(nn.Module):
         emb_reps_after_attention = torch.Tensor([0])  # torch.stack(mb_emb_reps_after_attention, dim=0)
 
         # Calculate predictions (shape (N, n_outputs))
-        predictions = torch.stack(predictions)
+        predictions = torch.stack(predictions).unsqueeze(1)
 
         return predictions, mb_attention_weights, emb_reps_after_attention
 
