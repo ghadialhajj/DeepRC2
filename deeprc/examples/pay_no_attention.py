@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from deeprc.task_definitions import TaskDefinition, BinaryTarget, MulticlassTarget, RegressionTarget, Sequence_Target
 from deeprc.dataset_readers import make_dataloaders, no_sequence_count_scaling
-from deeprc.architectures import ShallowlRC, SequenceEmbeddingCNN, OutputNetwork
+from deeprc.architectures import ShallowRC, SequenceEmbeddingCNN, OutputNetwork
 from deeprc.training import train, evaluate
 import wandb
 import os
@@ -13,12 +13,12 @@ from deeprc.utils import Logger
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--n_updates', help='Number of updates to train for. Recommended: int(1e5). Default: int(1e3)',
-                    type=int, default=int(15e3))
+                    type=int, default=int(6e3))
 
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(5e2))
+                    type=int, default=int(2.5e2))
 
 parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
                                                     'Recommended: int(5e3). Default: int(1e2).',
@@ -54,7 +54,7 @@ base_results_dir = "/results/singletask_cnn/ideal"
 
 strategies = ["PDRC"]
 
-datasets = ["n_600_wr_1.000%_po_100%"]
+datasets = ["n_600_wr_0.300%_po_100%"]
 print("defined variables")
 
 for datastet in datasets:
@@ -124,7 +124,7 @@ for datastet in datasets:
         torch.manual_seed(seeds[args.idx])
         np.random.seed(seeds[args.idx])
 
-        run = wandb.init(project="Knut", group=group, reinit=True)
+        run = wandb.init(project="Knut", group=f"{group}_shallow", reinit=True)
         run.name = f"results_idx_{str(args.idx)}"
 
         wandb.config.update(args)
@@ -137,12 +137,11 @@ for datastet in datasets:
                                        n_output_features=task_definition.get_n_output_features(), n_layers=1,
                                        n_units=32)
 
-        model = ShallowlRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
-                           output_network=output_network,
-                           consider_seq_counts=False, n_input_features=20, add_positional_information=True,
-                           sequence_reduction_fraction=config["sequence_reduction_fraction"],
-                           reduction_mb_size=config["reduction_mb_size"], device=device,
-                           forced_attention=config["forced_attention"]).to(device=device)
+        model = ShallowRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
+                          output_network=output_network,
+                          consider_seq_counts=False, n_input_features=20, add_positional_information=True,
+                          sequence_reduction_fraction=config["sequence_reduction_fraction"],
+                          reduction_mb_size=config["reduction_mb_size"], device=device).to(device=device)
 
         print("training")
         train(model, task_definition=task_definition, trainingset_dataloader=trainingset,

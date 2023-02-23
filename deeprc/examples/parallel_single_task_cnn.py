@@ -68,7 +68,7 @@ dataset_type = "all_observed10"
 # root_dir = "/cluster/work/projects/ec35/ec-ghadia/"
 base_results_dir = "/results/singletask_cnn/ideal"
 # , "tag": ["AdHoc1.3.1"]}
-# n_20_op_1_po_0.100%25_pu_0
+# n_20_op_1_po_0.100%_pu_0
 # strategies = ["TASTER", "TASTE", "TE", "FG"]  # , "PDRC", "T-SAFTE"]
 strategies = ["PDRC"]
 # datasets = ["n_600_wr_1.500%_po_100%", "n_600_wr_2.000%_po_100%", "n_600_wr_3.000%_po_100%"]

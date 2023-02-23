@@ -14,7 +14,7 @@ import pandas as pd
 import torch
 from deeprc.task_definitions import TaskDefinition, BinaryTarget, MulticlassTarget, RegressionTarget, Sequence_Target
 from deeprc.dataset_readers import make_dataloaders, no_sequence_count_scaling
-from deeprc.architectures import DeepRC, ShallowlRC, SequenceEmbeddingCNN, AttentionNetwork, OutputNetwork
+from deeprc.architectures import DeepRC, ShallowRC, SequenceEmbeddingCNN, AttentionNetwork, OutputNetwork
 from deeprc.training import train, evaluate
 import wandb
 import os
@@ -55,25 +55,26 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:0"  # + str(int((args.ideal + args.idx)%2))
+device_name = "cuda:1"  # + str(int((args.ideal + args.idx)%2))
 device = torch.device(device_name)
 
 seeds = [92, 9241, 5149, 41, 720, 813, 48525]
 
-root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
+# root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
+root_dir = "/storage/ghadia/DeepRC2/deeprc"
 dataset_type = "test"
 base_results_dir = "/results/singletask_cnn/ideal"
 strategies = ["PDRC"]
+# datasets = ["n_20_op_1_po_0.100%_pu_0"]
 datasets = ["n_20_op_1_po_0.100%25_pu_0"]
 print("defined variables")
-
 
 for datastet in datasets:
     print(datastet)
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.2,
               "dataset": datastet, "pos_weight": 100, "Branch": "AdHoc1",
-              "dataset_type": dataset_type}
+              "dataset_type": dataset_type, "deep": False}
     # Append current timestamp to results directory
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
 
@@ -163,14 +164,23 @@ for datastet in datasets:
         output_network = OutputNetwork(n_input_features=args.n_kernels,
                                        n_output_features=task_definition.get_n_output_features(), n_layers=1,
                                        n_units=32)
-        # Combine networks to DeepRC network
-        model = ShallowlRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
-                       # attention_network=attention_network,
-                       output_network=output_network,
-                       consider_seq_counts=False, n_input_features=20, add_positional_information=True,
-                       sequence_reduction_fraction=config["sequence_reduction_fraction"],
-                       reduction_mb_size=config["reduction_mb_size"], device=device,
-                       forced_attention=config["forced_attention"]).to(device=device)
+        if config["deep"]:
+            # Combine networks to DeepRC network
+            model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
+                           attention_network=attention_network,
+                           output_network=output_network,
+                           consider_seq_counts=False, n_input_features=20, add_positional_information=True,
+                           sequence_reduction_fraction=config["sequence_reduction_fraction"],
+                           reduction_mb_size=config["reduction_mb_size"], device=device,
+                           forced_attention=config["forced_attention"]).to(device=device)
+
+        else:
+            # Combine networks to DeepRC network
+            model = ShallowRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
+                              output_network=output_network,
+                              consider_seq_counts=False, n_input_features=20, add_positional_information=True,
+                              sequence_reduction_fraction=1, device=device).to(device=device)
+
         #
         # Train DeepRC model
         #
@@ -183,7 +193,7 @@ for datastet in datasets:
               prop=config["prop"],
               log_training_stats_at=args.log_training_stats_at,  # Here our results and trained models will be stored
               train_then_freeze=config["train_then_freeze"], staged_training=config["staged_training"],
-              plain_DeepRC=config["plain_DeepRC"], log=False)
+              plain_DeepRC=config["plain_DeepRC"], log=False, deep=config["deep"])
 
         # logger.log_stats(model=model, device=device, step=args.n_updates)
 
@@ -194,6 +204,7 @@ for datastet in datasets:
         scores, sequence_scores = evaluate(model=model, dataloader=testset_eval, task_definition=task_definition,
                                            device=device)
         wandb.run.summary.update(scores["binary_target_1"])
-        wandb.run.summary.update(sequence_scores["sequence_class"])
+        if config["deep"]:
+            wandb.run.summary.update(sequence_scores["sequence_class"])
         print(f"Test scores:\n{scores}")
         wandb.finish()
