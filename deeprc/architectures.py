@@ -33,9 +33,9 @@ def compute_position_features(max_seq_len, sequence_lengths, dtype=np.float16):
 class SequenceEmbeddingCNN(nn.Module):
     def __init__(self, n_input_features: int, kernel_size: int = 9, n_kernels: int = 32, n_layers: int = 1):
         """Sequence embedding using 1D-CNN (`h()` in paper)
-        
+
         See `deeprc/examples/` for examples.
-        
+
         Parameters
         ----------
         n_input_features : int
@@ -69,12 +69,12 @@ class SequenceEmbeddingCNN(nn.Module):
 
     def forward(self, inputs, *args, **kwargs):
         """Apply sequence embedding CNN to inputs in NLC format.
-        
+
         Parameters
         ----------
         inputs: torch.Tensor
             Torch tensor of shape (n_sequences, n_sequence_positions, n_input_features).
-        
+
         Returns
         ---------
         max_conv_acts: torch.Tensor
@@ -446,7 +446,7 @@ class DeepRC(nn.Module):
         predictions = [torch.sum(
             torch.softmax(mb_attention_weights[start_i - n_seqs:start_i], 0) * mb_attention_weights[
                                                                                start_i - n_seqs:start_i])
-                       for start_i, n_seqs in zip(torch.cumsum(n_sequences_per_bag, 0), n_sequences_per_bag)]
+            for start_i, n_seqs in zip(torch.cumsum(n_sequences_per_bag, 0), n_sequences_per_bag)]
         # for n_seqs in n_sequences_per_bag:
         #     # Get sequence embedding h() for single bag (shape: (n_sequences_per_bag, d_v))
         #     attention_weights = mb_attention_weights[start_i:start_i + n_seqs]
@@ -594,3 +594,123 @@ class DeepRC(nn.Module):
                 reduced_sequence_pools = sequence_pools.detach().to(device=self.device, dtype=self.embedding_dtype)
 
         return reduced_inputs, reduced_sequence_lengths, reduced_sequence_labels, reduced_sequence_pools
+
+
+class ShallowlRC(nn.Module):
+    def __init__(self, max_seq_len: int, n_input_features: int = 20,
+                 sequence_embedding_network: torch.nn.Module = SequenceEmbeddingCNN(
+                     n_input_features=20 + 3, kernel_size=9, n_kernels=32, n_layers=1),
+                 output_network: torch.nn.Module = OutputNetwork(
+                     n_input_features=32, n_output_features=1, n_layers=0, n_units=32),
+                 sequence_embedding_as_16_bit: bool = True,
+                 consider_seq_counts: bool = False, add_positional_information: bool = True,
+                 sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
+                 device: torch.device = torch.device('cuda:0'), forced_attention: bool = True):
+        """DeepRC network as described in paper
+
+        Apply `.reduce_and_stack_minibatch()` to reduce number of sequences by `sequence_reduction_fraction`
+        based on their attention weights and stack/concatenate the bags to a minibatch.
+        Then apply `.forward()` to the minibatch to compute the predictions.
+
+        Reduction of sequences per bag is performed using minibatches of `reduction_mb_size` sequences to compute the
+        attention weights.
+
+        See `deeprc/examples/` for examples.
+
+        Parameters
+        ----------
+        max_seq_len
+            Maximum sequence length to expect. Used for pre-computation of position features.
+        n_input_features : int
+            Number of input features per sequence position (without position features).
+            E.g. 20 for 20 different AA characters.
+        sequence_embedding_network
+            Sequence embedding network (`h()` in paper).
+        attention_network
+            Attention network (`f()` in paper).
+        output_network
+            Output network (`o()` in paper).
+        sequence_embedding_as_16_bit : bool
+            Compute attention weights using 16bit precision? (Recommended if supported by hardware.)
+        consider_seq_counts : bool
+            Scale inputs by sequence counts? If False, sequence count information will be ignored.
+        add_positional_information : bool
+            Add position features to input sequence? Will add 3 position features per sequence position.
+        sequence_reduction_fraction : float
+            Sequences in a bag are ranked based on attention weights and reduced to the top
+             `sequence_reduction_fraction*n_seqs_per_bag` sequences.
+             `sequence_reduction_fraction` to be in range [0, 1].
+        reduction_mb_size : int
+            Reduction of sequences per bag is performed using minibatches of `reduction_mb_size` sequences to compute
+             the attention weights.
+        device : torch.device
+            Device to perform computations on
+        forced_attention : bool
+            If True, the model will use att_weights=1 for positive sequences and att_weights=0 for negative sequences.
+            Otherwise, attention weights will be computed using the attention network.
+        """
+        super(ShallowlRC, self).__init__()
+        self.n_input_features = n_input_features
+        self.max_seq_len = max_seq_len
+        self.device = device
+        self.consider_seq_counts = consider_seq_counts
+        self.add_positional_information = add_positional_information
+        self.sequence_reduction_fraction = sequence_reduction_fraction
+        self.reduction_mb_size = int(reduction_mb_size)
+        self.forced_attention = forced_attention
+
+        # sequence embedding network (h())
+        if sequence_embedding_as_16_bit:
+            self.embedding_dtype = torch.float16
+            self.sequence_embedding = sequence_embedding_network.to(device=device, dtype=self.embedding_dtype)
+        else:
+            self.embedding_dtype = torch.float
+            self.sequence_embedding = sequence_embedding_network
+
+        # Output network (o)
+        self.output_nn = output_network
+
+        # Pre-compute position features for all possible sequence lengths
+        position_features = compute_position_features(max_seq_len=max_seq_len,
+                                                      sequence_lengths=np.arange(max_seq_len + 1))
+        self.position_features = torch.from_numpy(position_features).to(device=device,
+                                                                        dtype=self.embedding_dtype).detach()
+
+    def forward(self, inputs_flat, sequence_lengths_flat, sequence_labels_flat, n_sequences_per_bag):
+        """ Apply DeepRC (see Fig.2 in paper)
+
+        Parameters
+        ----------
+        inputs_flat: torch.Tensor
+            Concatenated bags as input of shape
+            (n_samples*n_sequences_per_bag, n_sequence_positions, n_input_features)
+        sequence_lengths_flat: torch.Tensor
+            Sequence lengths
+            (n_samples*n_sequences_per_bag, 1)
+        sequence_labels_flat: torch.Tensor
+            Sequence labels
+            (n_samples*n_sequences_per_bag, 1)
+        n_sequences_per_bag: torch.Tensor
+            Number of sequences per bag as tensor of dtype torch.long and shape (n_samples,)
+
+        Returns
+        ----------
+        predictions: torch.Tensor
+            Prediction for bags of shape (n_samples, n_outputs)
+        """
+        # Get sequence embedding h() for all bags in mb (shape: (d_k, d_v))
+        mb_emb_seqs = self.sequence_embedding(inputs_flat,
+                                              sequence_lengths=sequence_lengths_flat).to(dtype=torch.float32)
+
+        predictions = [
+            torch.sum(torch.softmax(mb_emb_seqs[start_i - n_seqs:start_i], 0) * mb_emb_seqs[start_i - n_seqs:start_i],
+                      0)
+            for start_i, n_seqs in zip(torch.cumsum(n_sequences_per_bag, 0), n_sequences_per_bag)]
+
+        # Stack representations of bags (shape (N, d_v))
+        emb_reps_after_attention = torch.Tensor([[0], [1]])  # torch.stack(mb_emb_reps_after_attention, dim=0)
+
+        # Calculate predictions (shape (N, n_outputs))
+        predictions = self.output_nn(torch.stack(predictions))
+
+        return predictions, emb_reps_after_attention, emb_reps_after_attention
