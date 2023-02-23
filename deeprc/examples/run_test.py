@@ -14,7 +14,7 @@ import pandas as pd
 import torch
 from deeprc.task_definitions import TaskDefinition, BinaryTarget, MulticlassTarget, RegressionTarget, Sequence_Target
 from deeprc.dataset_readers import make_dataloaders, no_sequence_count_scaling
-from deeprc.architectures import DeepRC, SequenceEmbeddingCNN, AttentionNetwork, OutputNetwork
+from deeprc.architectures import DeepRC, ShallowlRC, SequenceEmbeddingCNN, AttentionNetwork, OutputNetwork
 from deeprc.training import train, evaluate
 import wandb
 import os
@@ -164,8 +164,8 @@ for datastet in datasets:
                                        n_output_features=task_definition.get_n_output_features(), n_layers=1,
                                        n_units=32)
         # Combine networks to DeepRC network
-        model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
-                       attention_network=attention_network,
+        model = ShallowlRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
+                       # attention_network=attention_network,
                        output_network=output_network,
                        consider_seq_counts=False, n_input_features=20, add_positional_information=True,
                        sequence_reduction_fraction=config["sequence_reduction_fraction"],
