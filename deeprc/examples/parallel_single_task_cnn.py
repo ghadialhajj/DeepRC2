@@ -194,7 +194,7 @@ for datastet in datasets:
         torch.manual_seed(seeds[args.idx])
         np.random.seed(seeds[args.idx])
 
-        run = wandb.init(project="Knut", group=group, reinit=True)  # , tags=config["tag"])
+        run = wandb.init(project="Knut2", group=group, reinit=True)  # , tags=config["tag"])
         run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
         # DeepRC_PlainW_StanData, Explore_wFPs
         if args.idx == 0:
