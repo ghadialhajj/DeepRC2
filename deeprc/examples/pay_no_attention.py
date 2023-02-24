@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from deeprc.task_definitions import TaskDefinition, BinaryTarget, MulticlassTarget, RegressionTarget, Sequence_Target
 from deeprc.dataset_readers import make_dataloaders, no_sequence_count_scaling
-from deeprc.architectures import ShallowRC, SequenceEmbeddingCNN, OutputNetwork
+from deeprc.architectures import DeepRC, ShallowRC, SequenceEmbeddingCNN, OutputNetwork, AttentionNetwork
 from deeprc.training import train, evaluate
 import wandb
 import os
@@ -52,17 +52,17 @@ dataset_type = "all_observed10"
 
 base_results_dir = "/results/singletask_cnn/ideal"
 
-strategies = ["PDRC"]
+strategies = ["ShallowRC"]# "miniDeepRC",
 
-datasets = ["n_600_wr_0.300%_po_100%"]
+datasets = ["n_600_wr_1.000%_po_100%"]
 print("defined variables")
 
 for datastet in datasets:
     print(datastet)
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
-              "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.2,
-              "dataset": datastet, "pos_weight": 100, "Branch": "AdHoc1",
-              "dataset_type": dataset_type}
+              "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'),
+              "dataset": datastet, "pos_weight": 100, "Branch": "exper",
+              "dataset_type": dataset_type, "forced_attention": False, "prop": 0.2}
 
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
 
@@ -94,37 +94,19 @@ for datastet in datasets:
 
     for strategy in strategies:
         print(strategy)
-        if strategy == "TE":
-            group = f"TE_n_up_{args.n_updates}_pw_{config['pos_weight']}"
-            config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                           "plain_DeepRC": False})
-        elif strategy == "TASTE":
-            group = f"TASTE_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight']}"
-            config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
-                           "plain_DeepRC": False, "rep_loss_only": False})
-        elif strategy == "TASTER":
-            group = f"TASTER_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight']}"
-            config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
-                           "plain_DeepRC": False, "rep_loss_only": True})
-        elif strategy == "T-SAFTE":
-            group = f"T-SAFTE_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight']}"
-            config.update({"train_then_freeze": True, "staged_training": True, "forced_attention": False,
-                           "plain_DeepRC": False})
-        elif strategy == "FG":
-            group = f"FG_n_up_{args.n_updates}_pw_{config['pos_weight']}"
-            config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": True,
-                           "plain_DeepRC": True})
-        elif strategy == "PDRC":
-            group = f"PDRC_n_up_{args.n_updates}"
-            config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                           "plain_DeepRC": True})
+        if strategy == "miniDeepRC":
+            group = f"miniDeepRC_n_up_{args.n_updates}"
+            config.update({"deep": True})
+        elif strategy == "ShallowRC":
+            group = f"ShallowRC_n_up_{args.n_updates}"
+            config.update({"deep": False})
         else:
             raise "Invalid strategy"
 
         torch.manual_seed(seeds[args.idx])
         np.random.seed(seeds[args.idx])
 
-        run = wandb.init(project="Knut", group=f"{group}_shallow", reinit=True)
+        run = wandb.init(project="Knut2", group=group, reinit=True)
         run.name = f"results_idx_{str(args.idx)}"
 
         wandb.config.update(args)
@@ -133,15 +115,30 @@ for datastet in datasets:
         sequence_embedding_network = SequenceEmbeddingCNN(n_input_features=20 + 3, kernel_size=args.kernel_size,
                                                           n_kernels=args.n_kernels, n_layers=1)
 
+        # Create attention network
+        attention_network = AttentionNetwork(n_input_features=args.n_kernels, n_layers=2, n_units=32)
+
         output_network = OutputNetwork(n_input_features=args.n_kernels,
                                        n_output_features=task_definition.get_n_output_features(), n_layers=1,
                                        n_units=32)
 
-        model = ShallowRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
-                          output_network=output_network,
-                          consider_seq_counts=False, n_input_features=20, add_positional_information=True,
-                          sequence_reduction_fraction=config["sequence_reduction_fraction"],
-                          reduction_mb_size=config["reduction_mb_size"], device=device).to(device=device)
+        if config["deep"]:
+            # Combine networks to DeepRC network
+            model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
+                           attention_network=attention_network,
+                           output_network=output_network,
+                           consider_seq_counts=False, n_input_features=20, add_positional_information=True,
+                           sequence_reduction_fraction=config["sequence_reduction_fraction"],
+                           reduction_mb_size=config["reduction_mb_size"], device=device,
+                           forced_attention=config["forced_attention"]).to(device=device)
+
+        else:
+            # Combine networks to DeepRC network
+            model = ShallowRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
+                              output_network=output_network,
+                              consider_seq_counts=False, n_input_features=20, add_positional_information=True,
+                              reduction_mb_size=config["reduction_mb_size"],
+                              sequence_reduction_fraction=config["sequence_reduction_fraction"], device=device).to(device=device)
 
         print("training")
         train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
@@ -151,12 +148,13 @@ for datastet in datasets:
               evaluate_at=args.evaluate_at, device=device, results_directory=f"{root_dir}{results_dir}",
               prop=config["prop"],
               log_training_stats_at=args.log_training_stats_at,
-              train_then_freeze=config["train_then_freeze"], staged_training=config["staged_training"],
-              plain_DeepRC=config["plain_DeepRC"], log=False)
+              log=False, deep=config["deep"], strategy=strategy)
 
         scores, sequence_scores = evaluate(model=model, dataloader=testset_eval, task_definition=task_definition,
                                            device=device)
         wandb.run.summary.update(scores["binary_target_1"])
-        wandb.run.summary.update(sequence_scores["sequence_class"])
+        # todo: fix KeyError: 'sequence_class'
+        # if config["deep"]:
+        #     wandb.run.summary.update(sequence_scores["sequence_class"])
         print(f"Test scores:\n{scores}")
         wandb.finish()
