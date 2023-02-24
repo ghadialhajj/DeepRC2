@@ -7,6 +7,7 @@ Contact -- widrich@ml.jku.at
 """
 import os
 from itertools import chain
+from torch.utils.tensorboard import SummaryWriter
 
 import numpy as np
 import torch
@@ -19,7 +20,8 @@ from deeprc.utils import get_outputs, Logger
 
 
 def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, task_definition: TaskDefinition,
-             show_progress: bool = True, device: torch.device = torch.device('cuda:1'), deep=False) -> Tuple[dict, dict]:
+             show_progress: bool = True, device: torch.device = torch.device('cuda:1'), deep=False) -> Tuple[
+    dict, dict]:
     """Compute DeepRC model scores on given dataset for tasks specified in `task_definition`
     
     Parameters
@@ -48,12 +50,12 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
                                                                                    device)
 
         scores = task_definition.get_scores(raw_outputs=all_logits, targets=all_targets)
-        if deep:
-            sequence_scores = task_definition.get_sequence_scores(raw_attentions=all_attentions.squeeze(),
-                                                                  sequence_targets=all_seq_targets)
-            return scores, sequence_scores
-        else:
-            return scores, {}
+        # if deep:
+        sequence_scores = task_definition.get_sequence_scores(raw_attentions=all_attentions.squeeze(),
+                                                              sequence_targets=all_seq_targets)
+        return scores, sequence_scores
+        # else:
+        #     return scores, {}
 
 
 def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stopping_target_id: str,
@@ -64,7 +66,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
           num_torch_threads: int = 3, learning_rate: float = 1e-4, l1_weight_decay: float = 0,
           l2_weight_decay: float = 0, log_training_stats_at: int = int(1e2), evaluate_at: int = int(5e3),
           ignore_missing_target_values: bool = True, prop: float = 0.7, train_then_freeze: bool = True,
-          staged_training: bool = True, plain_DeepRC: bool = False, log: bool = True, rep_loss_only=False, deep=False):
+          staged_training: bool = True, plain_DeepRC: bool = False, log: bool = True, rep_loss_only=False, deep=False,
+          strategy=""):
     """Train a DeepRC model on a given dataset on tasks specified in `task_definition`
      
      Model with lowest validation set loss on target `early_stopping_target_id` will be taken as final model (=early
@@ -187,6 +190,11 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     # Reset gradients
                     optimizer.zero_grad()
 
+                    writer = SummaryWriter(f'runs/{strategy}/')
+
+                    writer.add_graph(model, [inputs, sequence_lengths, sequence_labels, n_sequences])
+                    writer.close()
+
                     # Calculate predictions from reduced sequences,
                     logit_outputs, attention_outputs, _ = model(inputs_flat=inputs,
                                                                 sequence_lengths_flat=sequence_lengths,
@@ -198,27 +206,17 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                                                          ignore_missing_target_values=ignore_missing_target_values)
                     l1reg_loss = (torch.mean(torch.stack([p.abs().float().mean() for p in model.parameters()])))
                     if deep:
-                        if plain_DeepRC:
-                            with torch.no_grad():
-                                attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(),
-                                                                                   sequence_labels)
-                        else:
-                            attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(), sequence_labels)
-                        if plain_DeepRC:
-                            loss = pred_loss + l1reg_loss * l1_weight_decay
-                        else:
-                            if staged_training:
-                                loss = pred_loss * second_phase + l1reg_loss * l1_weight_decay + attention_loss * (
-                                    not rep_loss_only)
-                            else:
-                                loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
                         with torch.no_grad():
+                            attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(),
+                                                                               sequence_labels)
                             total_loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
+                        loss = pred_loss + l1reg_loss * l1_weight_decay
                     else:
                         loss = pred_loss + l1reg_loss * l1_weight_decay
-                        attention_loss = 0
                         with torch.no_grad():
-                            total_loss = loss
+                            attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(),
+                                                                               sequence_labels)
+                            total_loss = loss + attention_loss
 
                     # Perform update
                     loss.backward()
@@ -231,8 +229,10 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     # Add to tensorboard
                     if update % log_training_stats_at == 0 or update == 1:
                         if log:
-                            logg_and_att_hists = True if update == 1 or update % (4 * log_training_stats_at) == 0 else False
-                            logger.log_stats(model=model, device=device, step=update, log_and_att_hists=logg_and_att_hists)
+                            logg_and_att_hists = True if update == 1 or update % (
+                                        4 * log_training_stats_at) == 0 else False
+                            logger.log_stats(model=model, device=device, step=update,
+                                             log_and_att_hists=logg_and_att_hists)
                         group = 'training/'
                         # Loop through tasks and add losses to tensorboard
                         pred_losses = task_definition.get_losses(raw_outputs=logit_outputs, targets=targets)
