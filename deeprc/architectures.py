@@ -641,6 +641,8 @@ class ShallowRC(DeepRC):
         # Get sequence embedding h() for all bags in mb (shape: (d_k, d_v))
         mb_emb_seqs = self.sequence_embedding(inputs_flat,
                                               sequence_lengths=sequence_lengths_flat).to(dtype=torch.float32)
+        with torch.no_grad():
+            mb_attention_weights = self.attention_nn(mb_emb_seqs)
 
         predictions = [
             torch.sum(torch.softmax(mb_emb_seqs[start_i - n_seqs:start_i], 0) * mb_emb_seqs[start_i - n_seqs:start_i],
@@ -653,4 +655,4 @@ class ShallowRC(DeepRC):
         # Calculate predictions (shape (N, n_outputs))
         predictions = self.output_nn(torch.stack(predictions))
 
-        return predictions, emb_reps_after_attention, emb_reps_after_attention
+        return predictions, mb_attention_weights, emb_reps_after_attention
