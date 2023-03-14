@@ -6,7 +6,6 @@ training set.
 Author -- Michael Widrich
 Contact -- widrich@ml.jku.at
 """
-# todo: add key-query comparisons
 import argparse
 
 import numpy as np
@@ -62,67 +61,16 @@ seeds = [92, 9241, 5149, 41, 720, 813, 48525]
 
 # root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
-dataset_type = "all_observed"
-# root_dir = "/itf-fi-ml/shared/users/ghadia/deeprc"
-# root_dir = "/fp/homes01/u01/ec-ghadia/DeepRC2/deeprc"
-# root_dir = "/cluster/work/projects/ec35/ec-ghadia/"
+dataset_type = "trb_dataset"
 base_results_dir = "/results/singletask_cnn/ideal"
-# , "tag": ["AdHoc1.3.1"]}
-# n_20_op_1_po_0.100%25_pu_0
-strategies = ["FG"]  #["TASTE", "TE", "PDRC"]  #"TASTER",  , "FG", "T-SAFTE"]
-# datasets = ["n_600_wr_1.500%_po_100%", "n_600_wr_2.000%_po_100%", "n_600_wr_3.000%_po_100%"]
-# datasets = ["n_600_wr_0.150%_po_5%_nmotif_10_fpgn_0.150%", "n_600_wr_0.150%_po_20%_nmotif_10_fpgn_0.150%",
-#             "n_600_wr_0.150%_po_50%_nmotif_10_fpgn_0.150%"]
-# datasets = ["n_600_wr_0.150%_po_20%_nmotif_10_sw_50%_po2_1%"]
-# datasets = ["n_600_wr_0.150%_po_100%_nmotif_10_sw_20%_po2_0%", "n_600_wr_0.150%_po_80%_nmotif_10_sw_20%_po2_20%",
-#             "n_600_wr_0.150%_po_60%_nmotif_10_sw_20%_po2_40%", "n_600_wr_0.150%_po_100%_nmotif_10_sw_80%_po2_0%",
-#             "n_600_wr_0.150%_po_80%_nmotif_10_sw_80%_po2_20%", "n_600_wr_0.150%_po_60%_nmotif_10_sw_80%_po2_40%"]
-datasets = ["n_600_wr_0.030%_po_100%_nmotif_1"]
-# datasets = ["n_600_wr_1.000%_po_100%"]
-
-print("defined variables")
-
-
-# TE: Train Everthing
-# TASTE: Train Attention and Sequence Embedding first, then Train Everything
-# T-SAFTE: Train Sequence Embedding and Attention networks first, then Freeze the first part and Train Everything
-# FG: Forced Guidance: attention is provided rather than learned (regardless of label trueness)
-
-
-def get_sample_reps(num_per_class: int = 1, both_sides: bool = False):
-    main_path = f"{root_dir}/datasets/{dataset_type}/{config['dataset']}"
-    meta_path = f"{main_path}/metadata.tsv"
-    meta_csv = pd.read_csv(meta_path, sep="\t")
-    groups = meta_csv.groupby('binary_target_1')
-
-    first_idx = list(range(num_per_class))
-    second_idx = [-i for i in range(1, num_per_class + 1)] if both_sides else []
-    neg_reps = groups.get_group('-').iloc[[*first_idx, *second_idx]]["ID"].tolist()
-    pos_reps = groups.get_group('+').iloc[[*first_idx, *second_idx]]["ID"].tolist()
-
-    file_names = [*neg_reps, *pos_reps]
-    rep_labels = ["-"] * num_per_class * (int(both_sides) + 1) + ["+"] * num_per_class * (int(both_sides) + 1)
-    meta_sample = {"meta_file": pd.DataFrame({"repertoire": file_names, "label": rep_labels})}
-    reps = {name: pd.read_csv(f"{main_path}/repertoires/{name}", sep="\t") for name in file_names}
-    return {**meta_sample, **reps}
-
-
-def log_reps(df_dict: dict):
-    for k, v in df_dict.items():
-        table = wandb.Table(dataframe=v)
-        table_artifact = wandb.Artifact(k, type="dataset")
-        table_artifact.add(table, k)
-        # Log the table to visualize with a run...
-        run.log({k: table})
-        # and Log as an Artifact to increase the available row limit!
-        run.log_artifact(table_artifact)
-
+strategies = ["TASTE", "TE", "PDRC"]  #"TASTER",  , "FG", "T-SAFTE"]
+datasets = ["AIRR"]
 
 for datastet in datasets:
     print(datastet)
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
-              "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.2,
-              "dataset": datastet, "pos_weight": 100, "Branch": "AdHoc1",
+              "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.5,
+              "dataset": datastet, "pos_weight": 100, "Branch": "HUNT",
               "dataset_type": dataset_type}
     # Append current timestamp to results directory
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
@@ -197,9 +145,6 @@ for datastet in datasets:
         run = wandb.init(project="BackToFG", group=group, reinit=True)  # , tags=config["tag"])
         run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
         # DeepRC_PlainW_StanData, Explore_wFPs
-        if args.idx == 0:
-            df_dict = get_sample_reps()
-            log_reps(df_dict)
 
         wandb.config.update(args)
         wandb.config.update(config)
