@@ -293,6 +293,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                             # saver_loader.save_to_file(filename=f'best_so_far_u{update}.tar.gzip')
 
                     if update >= n_updates:
+                        logger.log_motifs(list(model.sequence_embedding.parameters())[0].cpu().detach().numpy(),
+                                          step=update)
                         break
             update_progess_bar.close()
         finally:
