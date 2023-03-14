@@ -8,6 +8,7 @@ Contact -- widrich@ml.jku.at
 import os
 
 import numpy as np
+import pandas as pd
 import requests
 import shutil
 
@@ -19,6 +20,7 @@ import wandb
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from time import time
+import logomaker
 
 
 class Timer(object):
@@ -75,6 +77,14 @@ class Logger():
         self.with_FPs = with_FPs
         self.dataloaders = dataloaders
 
+    def log_motifs(self, params: np.ndarray, step):
+        cnn_weights = params[:, :20, :].squeeze()
+
+        for motif_idx in range(cnn_weights.shape[0]):
+            motif_matrix = cnn_weights[motif_idx].T
+            fig = plot_motifs(motif_matrix)
+            wandb.log({f'Motifs/motif_{str(motif_idx)}': wandb.Image(fig)}, step=step)
+
     def log_stats(self, model: torch.nn.Module, device=torch.device('cuda:0'), step: int = 0,
                   log_and_att_hists: bool = True):
         """
@@ -83,8 +93,8 @@ class Logger():
         for dl_name, dl in self.dataloaders.items():
             split_logits, split_attentions, split_rep_embs = self.get_values_per_dl(model, dl, device=device)
             split_rep_embs_pca = perform_pca(split_rep_embs)
-            split_rep_embs_tsne = perform_tsne(split_rep_embs)
-            self.log_repertoire_rep(dl_name, split_rep_embs_pca, split_rep_embs_tsne, step)
+            # split_rep_embs_tsne = perform_tsne(split_rep_embs)
+            self.log_repertoire_rep(dl_name, split_rep_embs_pca, None, step)
             if log_and_att_hists:
                 self.log_logits(dl_name, split_logits, step)
 
@@ -93,8 +103,8 @@ class Logger():
     def log_repertoire_rep(self, dl_name, split_rep_embs_pca, split_rep_embs_tsne, step):
         self.plot_scatter(pos_vals=split_rep_embs_pca[0], neg_vals=split_rep_embs_pca[1], dl_name=dl_name,
                           plot_title=f"Positive (B) and Negative (R) PCAcomp", step=step, method="PCA")
-        self.plot_scatter(pos_vals=split_rep_embs_tsne[0], neg_vals=split_rep_embs_tsne[1], dl_name=dl_name,
-                          plot_title=f"Positive (B) and Negative (R) TSNEcomp", step=step, method="TSNE")
+        # self.plot_scatter(pos_vals=split_rep_embs_tsne[0], neg_vals=split_rep_embs_tsne[1], dl_name=dl_name,
+        #                   plot_title=f"Positive (B) and Negative (R) TSNEcomp", step=step, method="TSNE")
 
     def log_attention(self, dl_name, split_attentions, step):
         data = {"observed": split_attentions[0],
@@ -262,3 +272,40 @@ def perform_tsne(split_rep_embs):
     pos_embs = results[:pos_len, :]
     neg_embds = results[pos_len:, :]
     return pos_embs, neg_embds
+
+
+def plot_motifs(motif_matrix, num_aas: int = 3, kernel_size: int = 5):
+
+    indices = np.argsort(-motif_matrix, axis=1)[:, :num_aas]
+
+    mask = np.zeros_like(motif_matrix, dtype=bool)
+    mask[np.arange(kernel_size)[:, None], indices] = True
+
+    # set the unwanted values in the original motif_matrix to zero
+    motif_matrix[~mask] = 0
+
+    max_values = np.max(motif_matrix, axis=1).reshape(-1, 1)
+    motif_matrix = motif_matrix / max_values * 5
+
+    matrix_df = pd.DataFrame(motif_matrix, columns=[
+        'A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y'])
+
+    # create Logo object
+    crp_logo = logomaker.Logo(matrix_df,
+                              shade_below=.5,
+                              fade_below=.5,)
+
+    crp_logo.style_spines(visible=False)
+    crp_logo.style_spines(spines=['left', 'bottom'], visible=True)
+    crp_logo.style_xticks(rotation=90, fmt='%d', anchor=0)
+
+    crp_logo.ax.xaxis.set_ticks_position('none')
+    crp_logo.ax.xaxis.set_tick_params(pad=-1)
+    crp_logo.ax.set_ylim([0, 15])
+    return crp_logo.fig
+
+
+if __name__ == '__main__':
+    run = wandb.init(project="Test", reinit=True)  # , tags=config["tag"])
+    cnn_weights = np.random.randn(4, 23, 5)
+    plot_motifs(cnn_weights)
