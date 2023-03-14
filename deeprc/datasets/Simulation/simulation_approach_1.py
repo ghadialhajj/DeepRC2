@@ -10,7 +10,7 @@ from pathos.multiprocessing import ProcessingPool as Pool
 
 print("imported")
 AA = ('A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y')
-n_threads = 60
+n_threads = 28
 n_reps = int(600)
 prevalence = 0.5
 SEQ_LENGTH_MEAN = 14.5
@@ -18,13 +18,13 @@ SEQ_LENGTH_STDDEV = 1.1
 SEQ_PER_REP_MEAN = 1e5
 SEQ_PER_REP_STDDEV = 0
 SIZE_PER_POOL = int(5e7)
-NUM_IN_OBSERVED = None
+NUM_IN_OBSERVED = None      # if observed motifs are different from the unobserved ones
 PROP_OBSERVED = 0.5  # the proportion of AAs that will be used to replace Z in observed motifs
-swap_fraction = [0.2, 0.5, 0.8]
-source_data_path = "/storage/ghadia/DeepRC2/deeprc/datasets/SSM2"
-wr_list = [0.15]
+swap_fraction = [1]  # 0.2, 0.5,
+source_data_path = "/storage/ghadia/DeepRC2/deeprc/datasets/all_observed"
+wr_list = [0.03]
 P_FP_GIVEN_NEGATIVE = None  # 0.0015  # WR/(1-WR)
-pos = [0.6, 0.8, 1]
+pos = [1]
 # n_threads = 4
 # n_reps = int(20)
 # prevalence = 0.5
@@ -36,16 +36,15 @@ pos = [0.6, 0.8, 1]
 # NUM_IN_OBSERVED = None
 # PROP_OBSERVED = 0.5  # the proportion of AAs that will be used to replace Z in observed motifs
 # # TODO: Should we restrict the number of AAs that can be used for the observed and non observed motifs instances?
-# swap_fraction = 0.5
-# source_data_path = "/home/ghadi/PycharmProjects/DeepRC2/deeprc/datasets/SSM2"
+# swap_fraction = [0.8]
+# source_data_path = "/home/ghadi/PycharmProjects/DeepRC2/deeprc/datasets/SSM2test"
 # P_FP_GIVEN_NEGATIVE = None  # 0.01
 # wr_list = [0.4]
 # pos = [1]
 
 replace_probs = {2: 1}
 delete_probs = None  # {1: 0.5}
-n_motifs = 10
-
+n_motifs = 1
 
 print("Finished defining variables")
 
@@ -264,13 +263,11 @@ def create_dataset(wr: float, po: float = 0.8, hypo_reps: bool = False, po2: flo
 
         output_path = source_data_path + f"/n_{n_reps}_wr_{wr:.3%}_po_{po:.0%}_nmotif_{n_motifs}"
         if swap_fraction != 1:
-            output_path = output_path + f"_sw_{swap_fraction:.0%}"
+            output_path = output_path + f"_sw_{swap_fraction:.0%}" + f"_po2_{po2:.0%}"
         if P_FP_GIVEN_NEGATIVE is not None:
             output_path = output_path + f"_fpgn_{P_FP_GIVEN_NEGATIVE:.3%}"
         if NUM_IN_OBSERVED is not None:
             output_path = output_path + f"_nmio_{NUM_IN_OBSERVED}"
-        if po2 is not None:
-            output_path = output_path + f"_po2_{po2:.0%}"
         # output_path = source_data_path + f"/delete"
         print(f"\033[44;97m {output_path} \033[0m")
         # output_path = source_data_path + f"/n_{n_reps}_wr_{wr}"
@@ -283,7 +280,7 @@ def create_dataset(wr: float, po: float = 0.8, hypo_reps: bool = False, po2: flo
         pd.DataFrame(meta_dict).to_csv(output_path + "/metadata.tsv", sep="\t", index=False)
     basic_list = []
     n_reps_first_set = int(n_reps * swap_fraction)
-    n_reps_second_set = int(n_reps * (1 - swap_fraction))
+    n_reps_second_set = int(n_reps * round(1 - swap_fraction, 2))
 
     with Timer("first set"):
         with Pool(n_threads) as pool:
