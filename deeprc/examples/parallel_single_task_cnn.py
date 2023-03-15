@@ -25,7 +25,7 @@ from deeprc.utils import Logger
 #
 parser = argparse.ArgumentParser()
 parser.add_argument('--n_updates', help='Number of updates to train for. Recommended: int(1e5). Default: int(1e3)',
-                    type=int, default=int(15e3))
+                    type=int, default=int(20e3))
 # type=int, default=int(20))
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
@@ -163,7 +163,7 @@ for datastet in datasets:
                                        n_output_features=task_definition.get_n_output_features(), n_layers=1,
                                        n_units=32)
         # Combine networks to DeepRC network
-        model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
+        model = DeepRC(max_seq_len=37, sequence_embedding_network=sequence_embedding_network,
                        attention_network=attention_network,
                        output_network=output_network,
                        consider_seq_counts=False, n_input_features=20, add_positional_information=True,
@@ -176,7 +176,7 @@ for datastet in datasets:
         print("training")
         train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
               trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
-              early_stopping_target_id='binary_target_1',  # Get model that performs best for this task
+              early_stopping_target_id='disease_status',  # Get model that performs best for this task
               validationset_eval_dataloader=validationset_eval, logger=logger, n_updates=args.n_updates,
               evaluate_at=args.evaluate_at, device=device, results_directory=f"{root_dir}{results_dir}",
               prop=config["prop"],

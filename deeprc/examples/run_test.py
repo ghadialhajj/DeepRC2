@@ -61,11 +61,10 @@ device = torch.device(device_name)
 seeds = [92, 9241, 5149, 41, 720, 813, 48525]
 
 root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
-dataset_type = "all_observed10"
+dataset_type = "trb_dataset"
 base_results_dir = "/results/singletask_cnn/ideal"
-strategies = ["PDRC"]
-datasets = ["n_600_wr_0.150%25_po_100%25"]
-print("defined variables")
+strategies = ["PDRC"]  #"TASTER", "TASTE", "TE",  , "FG", "T-SAFTE"]
+datasets = ["AIRR"]
 
 
 for datastet in datasets:
@@ -83,8 +82,8 @@ for datastet in datasets:
     # Assume we want to train on 1 main task as binary task at column 'binary_target_1' of our metadata file.
     task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
         BinaryTarget(  # Add binary classification task with sigmoid output function
-            column_name='binary_target_1',  # Column name of task in metadata file
-            true_class_value='+',  # Entries with value '+' will be positive class, others will be negative class
+            column_name='disease_status',  # Column name of task in metadata file
+            true_class_value='CeD',  # Entries with value '+' will be positive class, others will be negative class
             pos_weight=1.,  # We can up- or down-weight the positive class if the classes are imbalanced
         ),
         Sequence_Target(pos_weight=config["pos_weight"]),
@@ -95,13 +94,14 @@ for datastet in datasets:
     # Get data loaders for training set and training-, validation-, and test-set in evaluation mode (=no random subsampling)
     trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
         task_definition=task_definition,
-        metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/metadata.tsv",
+        metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/metadata2.tsv",
         n_worker_processes=4,
         repertoiresdata_path=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/repertoires",
         metadata_file_id_column='ID',
-        sequence_column='amino_acid',
-        sequence_counts_column='templates',
-        sequence_labels_column='label',
+        sequence_column='cdr3_aa',
+        sequence_counts_column=None,
+        sequence_pools_column='matched',
+        sequence_labels_column='matched',
         sample_n_sequences=args.sample_n_sequences,
         sequence_counts_scaling_fn=no_sequence_count_scaling
 
@@ -144,7 +144,7 @@ for datastet in datasets:
         torch.manual_seed(seeds[args.idx])
         np.random.seed(seeds[args.idx])
 
-        run = wandb.init(project="SSM2", group=group, reinit=True)  # , tags=config["tag"])
+        run = wandb.init(project="HUNT", group=group, reinit=True)  # , tags=config["tag"])
         run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
         # DeepRC_PlainW_StanData, Explore_wFPs
 
@@ -164,7 +164,7 @@ for datastet in datasets:
                                        n_output_features=task_definition.get_n_output_features(), n_layers=1,
                                        n_units=32)
         # Combine networks to DeepRC network
-        model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
+        model = DeepRC(max_seq_len=37, sequence_embedding_network=sequence_embedding_network,
                        attention_network=attention_network,
                        output_network=output_network,
                        consider_seq_counts=False, n_input_features=20, add_positional_information=True,
@@ -177,7 +177,7 @@ for datastet in datasets:
         print("training")
         train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
               trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
-              early_stopping_target_id='binary_target_1',  # Get model that performs best for this task
+              early_stopping_target_id='disease_status',  # Get model that performs best for this task
               validationset_eval_dataloader=validationset_eval, logger=logger, n_updates=args.n_updates,
               evaluate_at=args.evaluate_at, device=device, results_directory=f"{root_dir}{results_dir}",
               prop=config["prop"],
