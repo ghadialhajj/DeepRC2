@@ -56,6 +56,7 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 args = parser.parse_args()
 # Set computation device
 device_name = "cuda:0"  # + str(int((args.ideal + args.idx)%2))
+with_test = False
 device = torch.device(device_name)
 
 seeds = [92, 9241, 5149, 41, 720, 813, 48525]
@@ -152,13 +153,15 @@ for datastet in datasets:
         sequence_counts_column='templates',
         sequence_labels_column='label',
         sample_n_sequences=args.sample_n_sequences,
-        sequence_counts_scaling_fn=no_sequence_count_scaling
-
+        sequence_counts_scaling_fn=no_sequence_count_scaling,
+        with_test=with_test
         # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
     )
-    dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval,
-               "testset_eval": testset_eval}
-    logger = Logger(dataloaders=dl_dict, with_FPs=True)
+    dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval}
+    if with_test:
+        dl_dict.update({"testset_eval": testset_eval})
+
+    logger = Logger(dataloaders=dl_dict, with_FPs=False)
 
     for strategy in strategies:
         print(strategy)
@@ -203,6 +206,9 @@ for datastet in datasets:
         wandb.config.update(args)
         wandb.config.update(config)
 
+        print("Dataloaders with lengths: ",
+              ", ".join([f"{str(name)}: {len(loader)}" for name, loader in dl_dict.items()]))
+
         #
         # Create DeepRC Network
         #
@@ -242,10 +248,10 @@ for datastet in datasets:
         #
         # Evaluate trained model on testset
         #
-
-        scores, sequence_scores = evaluate(model=model, dataloader=testset_eval, task_definition=task_definition,
-                                           device=device)
-        wandb.run.summary.update(scores["binary_target_1"])
-        wandb.run.summary.update(sequence_scores["sequence_class"])
-        print(f"Test scores:\n{scores}")
+        if with_test:
+            scores, sequence_scores = evaluate(model=model, dataloader=testset_eval, task_definition=task_definition,
+                                               device=device)
+            wandb.run.summary.update(scores["binary_target_1"])
+            wandb.run.summary.update(sequence_scores["sequence_class"])
+            print(f"Test scores:\n{scores}")
         wandb.finish()

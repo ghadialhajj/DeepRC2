@@ -26,16 +26,16 @@ from deeprc.utils import Logger
 #
 parser = argparse.ArgumentParser()
 parser.add_argument('--n_updates', help='Number of updates to train for. Recommended: int(1e5). Default: int(1e3)',
-                    type=int, default=int(500))
+                    type=int, default=int(50))
 # type=int, default=int(20))
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(50))
+                    type=int, default=int(25))
 # type=int, default=int(4))
 parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
                                                     'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(50))
+                    type=int, default=int(25))
 # type=int, default=int(2))
 parser.add_argument('--kernel_size', help='Size of 1D-CNN kernels (=how many sequence characters a CNN kernel spans).'
                                           'Default: 9',
@@ -56,6 +56,7 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 args = parser.parse_args()
 # Set computation device
 device_name = "cuda:0"  # + str(int((args.ideal + args.idx)%2))
+with_test = True
 device = torch.device(device_name)
 
 seeds = [92, 9241, 5149, 41, 720, 813, 48525]
@@ -64,7 +65,7 @@ root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
 dataset_type = "all_observed10"
 base_results_dir = "/results/singletask_cnn/ideal"
 strategies = ["PDRC"]
-datasets = ["n_600_wr_0.150%25_po_100%25"]
+datasets = ["n_50_wr_0.150%25_po_100%25"]
 print("defined variables")
 
 
@@ -103,13 +104,15 @@ for datastet in datasets:
         sequence_counts_column='templates',
         sequence_labels_column='label',
         sample_n_sequences=args.sample_n_sequences,
-        sequence_counts_scaling_fn=no_sequence_count_scaling
-
+        sequence_counts_scaling_fn=no_sequence_count_scaling,
+        with_test=with_test
         # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
     )
-    dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval,
-               "testset_eval": testset_eval}
-    logger = Logger(dataloaders=dl_dict)
+    dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval}
+    if with_test:
+        dl_dict.update({"testset_eval": testset_eval})
+
+    logger = Logger(dataloaders=dl_dict, with_FPs=True)
 
     for strategy in strategies:
         print(strategy)
@@ -144,12 +147,15 @@ for datastet in datasets:
         torch.manual_seed(seeds[args.idx])
         np.random.seed(seeds[args.idx])
 
-        run = wandb.init(project="SSM2", group=group, reinit=True)  # , tags=config["tag"])
+        run = wandb.init(project="Test", group=group, reinit=True)  # , tags=config["tag"])
         run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
         # DeepRC_PlainW_StanData, Explore_wFPs
 
         wandb.config.update(args)
         wandb.config.update(config)
+
+        print("Dataloaders with lengths: ",
+              ", ".join([f"{str(name)}: {len(loader)}" for name, loader in dl_dict.items()]))
 
         #
         # Create DeepRC Network
@@ -185,15 +191,15 @@ for datastet in datasets:
               train_then_freeze=config["train_then_freeze"], staged_training=config["staged_training"],
               plain_DeepRC=config["plain_DeepRC"], log=True)
 
-        # logger.log_stats(model=model, device=device, step=args.n_updates)
+        logger.log_stats(model=model, device=device, step=args.n_updates)
 
         #
         # Evaluate trained model on testset
         #
-
-        scores, sequence_scores = evaluate(model=model, dataloader=testset_eval, task_definition=task_definition,
-                                           device=device)
-        wandb.run.summary.update(scores["binary_target_1"])
-        wandb.run.summary.update(sequence_scores["sequence_class"])
-        print(f"Test scores:\n{scores}")
+        if with_test:
+            scores, sequence_scores = evaluate(model=model, dataloader=testset_eval, task_definition=task_definition,
+                                               device=device)
+            wandb.run.summary.update(scores["binary_target_1"])
+            wandb.run.summary.update(sequence_scores["sequence_class"])
+            print(f"Test scores:\n{scores}")
         wandb.finish()

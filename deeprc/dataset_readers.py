@@ -60,9 +60,10 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                      sample_n_sequences: int = 10000,
                      metadata_file_id_column: str = 'ID', metadata_file_column_sep: str = '\t',
                      sequence_column: str = 'amino_acid', sequence_counts_column: str = 'templates',
-                     sequence_labels_column: str = 'label', sequence_pools_column: str = "pool_label", repertoire_files_column_sep: str = '\t',
-                     filename_extension: str = '.tsv', h5py_dict: dict = None, all_sets: bool = True,
-                     sequence_counts_scaling_fn: Callable = no_sequence_count_scaling, verbose: bool = True) \
+                     sequence_labels_column: str = 'label', sequence_pools_column: str = "pool_label",
+                     repertoire_files_column_sep: str = '\t', filename_extension: str = '.tsv', h5py_dict: dict = None,
+                     all_sets: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
+                     with_test: bool = False, verbose: bool = True) \
         -> Tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
     """Get data loaders for a dataset
     
@@ -170,7 +171,8 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
             print(f"Converting: {repertoiresdata_path}\n->\n{hdf5_file} @{n_worker_processes} processes")
         converter = DatasetToHDF5(repertoiresdata_directory=repertoiresdata_path, sequence_column=sequence_column,
                                   sequence_counts_column=sequence_counts_column,
-                                  sequence_labels_column=sequence_labels_column, sequence_pools_column=sequence_pools_column,
+                                  sequence_labels_column=sequence_labels_column,
+                                  sequence_pools_column=sequence_pools_column,
                                   column_sep=repertoire_files_column_sep, filename_extension=filename_extension,
                                   h5py_dict=h5py_dict, verbose=verbose)
         converter.save_data_to_file(output_file=hdf5_file, n_workers=n_worker_processes)
@@ -212,11 +214,16 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
     if cross_validation_fold >= len(split_inds):
         raise ValueError(f"Demanded `cross_validation_fold` {cross_validation_fold} but only {len(split_inds)} splits "
                          f"exist in `split_inds`.")
-    testset_inds = split_inds.pop(cross_validation_fold)
+    if with_test:
+        testset_inds = split_inds.pop(cross_validation_fold)
     validationset_inds = split_inds.pop(cross_validation_fold - 1)
     trainingset_inds = np.concatenate(split_inds)
 
-    trainingset_dataloader, trainingset_eval_dataloader, validationset_eval_dataloader, testset_eval_dataloader = [None]*4
+    if verbose:
+        print("Creating dataloaders for dataset splits")
+
+    trainingset_dataloader, trainingset_eval_dataloader, validationset_eval_dataloader, testset_eval_dataloader = [
+                                                                                                                      None] * 4
     #
     # Create datasets and dataloaders for splits
     #
@@ -241,11 +248,11 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
             dataset=full_dataset, indices=validationset_inds, sample_n_sequences=None)
         validationset_eval_dataloader = DataLoader(
             validationset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
-
-        testset_eval_dataset = RepertoireDatasetSubset(
-            dataset=full_dataset, indices=testset_inds, sample_n_sequences=None)
-        testset_eval_dataloader = DataLoader(
-            testset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
+        if with_test:
+            testset_eval_dataset = RepertoireDatasetSubset(
+                dataset=full_dataset, indices=testset_inds, sample_n_sequences=None)
+            testset_eval_dataloader = DataLoader(
+                testset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
 
     if verbose:
         print("\tDone!")
@@ -505,7 +512,8 @@ class RepertoireDataset(Dataset):
         sample_id = str(self.sample_keys[idx])
         if sample_n_sequences is None:
             sample_n_sequences = self.sample_n_sequences
-        sequences, seq_lens, counts_per_sequence, label_per_sequence, pool_per_sequence = self.get_sample(idx, sample_n_sequences)
+        sequences, seq_lens, counts_per_sequence, label_per_sequence, pool_per_sequence = self.get_sample(idx,
+                                                                                                          sample_n_sequences)
         return target_features, sequences, seq_lens, counts_per_sequence, label_per_sequence, pool_per_sequence, sample_id
 
     def _vprint(self, *args, **kwargs):
