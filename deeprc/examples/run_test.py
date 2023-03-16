@@ -51,7 +51,7 @@ parser.add_argument('--sample_n_sequences', help='Number of instances to reduce 
 parser.add_argument('--learning_rate', help='Learning rate of DeepRC using Adam optimizer. Default: 1e-4',
                     type=float, default=1e-4)
 parser.add_argument('--idx', help='Index of the run. Default: 0.',
-                    type=int, default=1)
+                    type=int, default=0)
 
 args = parser.parse_args()
 # Set computation device
@@ -62,9 +62,10 @@ device = torch.device(device_name)
 seeds = [92, 9241, 5149, 41, 720, 813, 48525]
 
 root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
+# root_dir = "/storage/ghadia/DeepRC2/deeprc"
 dataset_type = "trb_dataset"
 base_results_dir = "/results/singletask_cnn/ideal"
-strategies = ["PDRC"]  #"TASTER", "TASTE", "TE",  , "FG", "T-SAFTE"]
+strategies = ["TASTER", "T-SAFTE"]  #"TASTER", "TASTE", "TE",  , "FG", "T-SAFTE"]
 datasets = ["AIRR"]
 
 
@@ -106,6 +107,24 @@ for datastet in datasets:
         sample_n_sequences=args.sample_n_sequences,
         sequence_counts_scaling_fn=no_sequence_count_scaling,
         with_test=with_test
+        # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
+    )
+
+    stage1_dataloader, *_ = make_dataloaders(
+        task_definition=task_definition,
+        metadata_file=f"{root_dir}/datasets/{dataset_type}/Hypo{config['dataset']}/metadata2.tsv",
+        n_worker_processes=4,
+        batch_size=2,
+        repertoiresdata_path=f"{root_dir}/datasets/{dataset_type}/Hypo{config['dataset']}/repertoires",
+        metadata_file_id_column='ID',
+        sequence_column='cdr3_aa',
+        sequence_counts_column=None,
+        sequence_pools_column='matched',
+        sequence_labels_column='matched',
+        sample_n_sequences=args.sample_n_sequences,
+        sequence_counts_scaling_fn=no_sequence_count_scaling,
+        with_test=with_test,
+        all_sets=False
         # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
     )
     dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval}
@@ -155,7 +174,8 @@ for datastet in datasets:
         wandb.config.update(config)
 
         print("Dataloaders with lengths: ",
-              ", ".join([f"{str(name)}: {len(loader)}" for name, loader in dl_dict.items()]))
+              ",\n".join([f"{str(name)}: {len(loader)}" for name, loader in dl_dict.items()]))
+        print("Stage1: ", len(stage1_dataloader))
 
         #
         # Create DeepRC Network
@@ -184,12 +204,13 @@ for datastet in datasets:
         train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
               trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
               early_stopping_target_id='disease_status',  # Get model that performs best for this task
-              validationset_eval_dataloader=validationset_eval, logger=logger, n_updates=args.n_updates,
+              validationset_eval_dataloader=validationset_eval, stage1_dataloader=stage1_dataloader,
+              logger=logger, n_updates=args.n_updates,
               evaluate_at=args.evaluate_at, device=device, results_directory=f"{root_dir}{results_dir}",
               prop=config["prop"],
               log_training_stats_at=args.log_training_stats_at,  # Here our results and trained models will be stored
               train_then_freeze=config["train_then_freeze"], staged_training=config["staged_training"],
-              plain_DeepRC=config["plain_DeepRC"], log=True)
+              plain_DeepRC=config["plain_DeepRC"], log=False)
 
         # logger.log_stats(model=model, device=device, step=args.n_updates)
 

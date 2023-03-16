@@ -14,7 +14,7 @@ import torch
 from deeprc.task_definitions import TaskDefinition, BinaryTarget, MulticlassTarget, RegressionTarget, Sequence_Target
 from deeprc.dataset_readers import make_dataloaders, no_sequence_count_scaling
 from deeprc.architectures import DeepRC, SequenceEmbeddingCNN, AttentionNetwork, OutputNetwork
-from deeprc.training import train, evaluate
+from deeprc.training2 import train, evaluate
 import wandb
 import os
 import datetime
@@ -30,7 +30,7 @@ parser.add_argument('--n_updates', help='Number of updates to train for. Recomme
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(1e2))
+                    type=int, default=int(1e3))
 # type=int, default=int(4))
 parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
                                                     'Recommended: int(5e3). Default: int(1e2).',
@@ -65,14 +65,14 @@ seeds = [922, 92413, 514, 4143, 7543]
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
 dataset_type = "trb_dataset"
 base_results_dir = "/results/singletask_cnn/ideal"
-strategies = ["PDRC"]  #"TASTER", "TASTE", "TE",  , "FG", "T-SAFTE"]
+strategies = ["TASTER", "T-SAFTE"]  #"TASTER", "TASTE", "TE",  , "FG", "T-SAFTE"]
 datasets = ["AIRR"]
 
 for datastet in datasets:
     print(datastet)
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.5,
-              "dataset": datastet, "pos_weight": 100, "Branch": "HUNT",
+              "dataset": datastet, "pos_weight": 500, "Branch": "HUNT",
               "dataset_type": dataset_type}
     # Append current timestamp to results directory
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
@@ -108,6 +108,24 @@ for datastet in datasets:
         with_test=with_test
         # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
     )
+
+    stage1_dataloader, *_ = make_dataloaders(
+        task_definition=task_definition,
+        metadata_file=f"{root_dir}/datasets/{dataset_type}/Hypo{config['dataset']}/metadata2.tsv",
+        n_worker_processes=4,
+        batch_size=2,
+        repertoiresdata_path=f"{root_dir}/datasets/{dataset_type}/Hypo{config['dataset']}/repertoires",
+        metadata_file_id_column='ID',
+        sequence_column='cdr3_aa',
+        sequence_counts_column=None,
+        sequence_pools_column='matched',
+        sequence_labels_column='matched',
+        sample_n_sequences=args.sample_n_sequences,
+        sequence_counts_scaling_fn=no_sequence_count_scaling,
+        with_test=with_test,
+        all_sets=False
+        # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
+    )
     dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval}
     if with_test:
         dl_dict.update({"testset_eval": testset_eval})
@@ -116,15 +134,7 @@ for datastet in datasets:
 
     for strategy in strategies:
         print(strategy)
-        if strategy == "TE":
-            group = f"TE_n_up_{args.n_updates}_pw_{config['pos_weight']}"
-            config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                           "plain_DeepRC": False})
-        elif strategy == "TASTE":
-            group = f"TASTE_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight']}"
-            config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
-                           "plain_DeepRC": False, "rep_loss_only": False})
-        elif strategy == "TASTER":
+        if strategy == "TASTER":
             group = f"TASTER_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight']}"
             config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
                            "plain_DeepRC": False, "rep_loss_only": True})
@@ -132,10 +142,6 @@ for datastet in datasets:
             group = f"T-SAFTE_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight']}"
             config.update({"train_then_freeze": True, "staged_training": True, "forced_attention": False,
                            "plain_DeepRC": False})
-        elif strategy == "FG":
-            group = f"FG_n_up_{args.n_updates}_pw_{config['pos_weight']}"
-            config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": True,
-                           "plain_DeepRC": True})
         elif strategy == "PDRC":
             group = f"PDRC_n_up_{args.n_updates}"
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
@@ -147,7 +153,7 @@ for datastet in datasets:
         torch.manual_seed(seeds[args.idx])
         np.random.seed(seeds[args.idx])
 
-        run = wandb.init(project="HUNT", group=group, reinit=True)  # , tags=config["tag"])
+        run = wandb.init(project="HypoHUNTus", group=group, reinit=True)  # , tags=config["tag"])
         run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
         # DeepRC_PlainW_StanData, Explore_wFPs
 
@@ -155,7 +161,8 @@ for datastet in datasets:
         wandb.config.update(config)
 
         print("Dataloaders with lengths: ",
-              ", ".join([f"{str(name)}: {len(loader)}" for name, loader in dl_dict.items()]))
+              ",\n".join([f"{str(name)}: {len(loader)}" for name, loader in dl_dict.items()]))
+        print("Stage1: ", len(stage1_dataloader))
 
         #
         # Create DeepRC Network
@@ -184,7 +191,8 @@ for datastet in datasets:
         train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
               trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
               early_stopping_target_id='disease_status',  # Get model that performs best for this task
-              validationset_eval_dataloader=validationset_eval, logger=logger, n_updates=args.n_updates,
+              validationset_eval_dataloader=validationset_eval, stage1_dataloader=stage1_dataloader,
+              logger=logger, n_updates=args.n_updates,
               evaluate_at=args.evaluate_at, device=device, results_directory=f"{root_dir}{results_dir}",
               prop=config["prop"],
               log_training_stats_at=args.log_training_stats_at,  # Here our results and trained models will be stored

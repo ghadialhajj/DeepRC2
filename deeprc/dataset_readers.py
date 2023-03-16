@@ -215,7 +215,8 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                          f"exist in `split_inds`.")
     if with_test:
         testset_inds = split_inds.pop(cross_validation_fold)
-    validationset_inds = split_inds.pop(cross_validation_fold - 1)
+    if all_sets:
+        validationset_inds = split_inds.pop(cross_validation_fold - 1)
     trainingset_inds = np.concatenate(split_inds)
 
     trainingset_dataloader, trainingset_eval_dataloader, validationset_eval_dataloader, testset_eval_dataloader = [
