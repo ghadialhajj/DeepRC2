@@ -8,7 +8,7 @@ Contact -- widrich@ml.jku.at
 import os
 from itertools import chain
 
-from estorch.pytorchtools import EarlyStopping
+from deeprc.estorch.pytorchtools import EarlyStopping
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -117,7 +117,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
     """
 
     # initialize the early_stopping object
-    early_stopping = EarlyStopping(patience=5, verbose=True)
+    early_stopping = EarlyStopping(patience=20, verbose=True)
 
     if log:
         logger.log_stats(model=model, device=device, step=0, log_and_att_hists=True)
