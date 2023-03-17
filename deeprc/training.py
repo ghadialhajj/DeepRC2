@@ -272,7 +272,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         scores, sequence_scores = evaluate(model=model, dataloader=validationset_eval_dataloader,
                                                            task_definition=task_definition, device=device)
                         scoring_loss = scores[early_stopping_target_id]['loss']
-                        early_stopping(scoring_loss, model)
+                        if second_phase:
+                            early_stopping(scoring_loss, model)
 
                         print(f" ...done!")
                         tprint(f"[validation] u: {update:07d}; scores: {scores};")
