@@ -63,14 +63,14 @@ seeds = [92, 9241, 5149, 41, 720, 813, 48525]
 
 # root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
-dataset_type = "all_observed10"
+dataset_type = "all_observed"
 # root_dir = "/itf-fi-ml/shared/users/ghadia/deeprc"
 # root_dir = "/fp/homes01/u01/ec-ghadia/DeepRC2/deeprc"
 # root_dir = "/cluster/work/projects/ec35/ec-ghadia/"
 base_results_dir = "/results/singletask_cnn/ideal"
 # , "tag": ["AdHoc1.3.1"]}
 # n_20_op_1_po_0.100%25_pu_0
-strategies = ["TASTE", "TE"]  #"TASTER",  , "FG", "T-SAFTE"]
+strategies = ["TASTE", "FG"]  #"TASTER", "TE", "PDRC" , "T-SAFTE"]
 # datasets = ["n_600_wr_1.500%_po_100%", "n_600_wr_2.000%_po_100%", "n_600_wr_3.000%_po_100%"]
 # datasets = ["n_600_wr_0.150%_po_5%_nmotif_10_fpgn_0.150%", "n_600_wr_0.150%_po_20%_nmotif_10_fpgn_0.150%",
 #             "n_600_wr_0.150%_po_50%_nmotif_10_fpgn_0.150%"]
@@ -78,7 +78,7 @@ strategies = ["TASTE", "TE"]  #"TASTER",  , "FG", "T-SAFTE"]
 # datasets = ["n_600_wr_0.150%_po_100%_nmotif_10_sw_20%_po2_0%", "n_600_wr_0.150%_po_80%_nmotif_10_sw_20%_po2_20%",
 #             "n_600_wr_0.150%_po_60%_nmotif_10_sw_20%_po2_40%", "n_600_wr_0.150%_po_100%_nmotif_10_sw_80%_po2_0%",
 #             "n_600_wr_0.150%_po_80%_nmotif_10_sw_80%_po2_20%", "n_600_wr_0.150%_po_60%_nmotif_10_sw_80%_po2_40%"]
-datasets = ["n_600_wr_0.050%_po_100%", "n_600_wr_0.010%_po_100%"]  # "n_600_wr_0.100%_po_100%",
+datasets = ["n_600_wr_0.010%_po_100%"]  #"n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
 
 print("defined variables")
 
@@ -123,7 +123,7 @@ for datastet in datasets:
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.3,
               "dataset": datastet, "pos_weight": 100, "Branch": "AdHoc1",
-              "dataset_type": dataset_type}
+              "dataset_type": dataset_type, "tau": 0.072939194042248}
     # Append current timestamp to results directory
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
 
@@ -196,7 +196,7 @@ for datastet in datasets:
         torch.manual_seed(seeds[args.idx])
         np.random.seed(seeds[args.idx])
 
-        run = wandb.init(project="DeepRC_PlainW_StanData", group=group, reinit=True)  # , tags=config["tag"])
+        run = wandb.init(project="BackToFG", group=group, reinit=True)  # , tags=config["tag"])
         run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
         # DeepRC_PlainW_StanData, Explore_wFPs
         if args.idx == 0:
