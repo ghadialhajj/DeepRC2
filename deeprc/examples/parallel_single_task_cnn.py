@@ -70,7 +70,7 @@ dataset_type = "all_observed"
 base_results_dir = "/results/singletask_cnn/ideal"
 # , "tag": ["AdHoc1.3.1"]}
 # n_20_op_1_po_0.100%25_pu_0
-strategies = ["TASTE", "FG"]  #"TASTER", "TE", "PDRC" , "T-SAFTE"]
+strategies = ["TASTE"]  #"TASTER", "FG", "TE", "PDRC" , "T-SAFTE"]
 # datasets = ["n_600_wr_1.500%_po_100%", "n_600_wr_2.000%_po_100%", "n_600_wr_3.000%_po_100%"]
 # datasets = ["n_600_wr_0.150%_po_5%_nmotif_10_fpgn_0.150%", "n_600_wr_0.150%_po_20%_nmotif_10_fpgn_0.150%",
 #             "n_600_wr_0.150%_po_50%_nmotif_10_fpgn_0.150%"]
@@ -78,7 +78,7 @@ strategies = ["TASTE", "FG"]  #"TASTER", "TE", "PDRC" , "T-SAFTE"]
 # datasets = ["n_600_wr_0.150%_po_100%_nmotif_10_sw_20%_po2_0%", "n_600_wr_0.150%_po_80%_nmotif_10_sw_20%_po2_20%",
 #             "n_600_wr_0.150%_po_60%_nmotif_10_sw_20%_po2_40%", "n_600_wr_0.150%_po_100%_nmotif_10_sw_80%_po2_0%",
 #             "n_600_wr_0.150%_po_80%_nmotif_10_sw_80%_po2_20%", "n_600_wr_0.150%_po_60%_nmotif_10_sw_80%_po2_40%"]
-datasets = ["n_600_wr_0.010%_po_100%"]  #"n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
+datasets = ["n_600_wr_0.005%_po_100%"]  #"n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
 
 print("defined variables")
 
