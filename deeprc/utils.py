@@ -86,7 +86,7 @@ class Logger():
             wandb.log({f'Motifs/motif_{str(motif_idx)}': wandb.Image(fig)}, step=step)
 
     def log_stats(self, model: torch.nn.Module, device=torch.device('cuda:0'), step: int = 0,
-                  log_and_att_hists: bool = True):
+                  log_and_att_hists: bool = True, log_per_kernel: bool = False):
         """
         Logs model statistics including repertoire embeddings, logits, and attentions for each dataloader.
         """
@@ -95,6 +95,8 @@ class Logger():
             split_rep_embs_pca = perform_pca(split_rep_embs)
             # split_rep_embs_tsne = perform_tsne(split_rep_embs)
             self.log_repertoire_rep(dl_name, split_rep_embs_pca, None, step)
+            if log_per_kernel and dl_name == "validationset_eval":
+                self.log_per_kernel(split_rep_embs)
             if log_and_att_hists:
                 self.log_logits(dl_name, split_logits, step)
 
@@ -215,6 +217,17 @@ class Logger():
 
             return pos_vals, neg_vals
 
+    def log_per_kernel(self, split_rep_embs):
+        config = dict(opacity=0.6, histnorm="percent", nbinsx=50)
+        split_rep_embs = torch.tensor(np.array(split_rep_embs))
+        for kernel_idx in range(split_rep_embs[0].shape[1]):
+            pos_per_dim = split_rep_embs[0, :, kernel_idx]
+            neg_per_dim = split_rep_embs[1, :, kernel_idx]
+            fig = go.Figure()
+            fig.add_trace(go.Histogram(x=pos_per_dim.cpu().numpy(), **config, name="pos"))
+            fig.add_trace(go.Histogram(x=neg_per_dim.cpu().numpy(), **config, name="neg"))
+            wandb.log({f'Per Kernel Activations/kernel_{str(kernel_idx)}': fig})
+
 
 def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
                 show_progress: bool = True, device: torch.device = torch.device('cuda:1')):
@@ -275,7 +288,6 @@ def perform_tsne(split_rep_embs):
 
 
 def plot_motifs(motif_matrix, num_aas: int = 3, kernel_size: int = 5):
-
     indices = np.argsort(-motif_matrix, axis=1)[:, :num_aas]
 
     mask = np.zeros_like(motif_matrix, dtype=bool)
@@ -293,7 +305,7 @@ def plot_motifs(motif_matrix, num_aas: int = 3, kernel_size: int = 5):
     # create Logo object
     crp_logo = logomaker.Logo(matrix_df,
                               shade_below=.5,
-                              fade_below=.5,)
+                              fade_below=.5, )
 
     crp_logo.style_spines(visible=False)
     crp_logo.style_spines(spines=['left', 'bottom'], visible=True)
