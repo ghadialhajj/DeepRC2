@@ -8,6 +8,7 @@ Contact -- widrich@ml.jku.at
 import os
 from itertools import chain
 
+from deeprc.estorch.pytorchtools import EarlyStopping
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -114,6 +115,9 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
          If True, missing target values will be ignored for training. This can be useful if auxiliary tasks are not
          available for all samples but might increase the computation time per update.
     """
+
+    # initialize the early_stopping object
+    early_stopping = EarlyStopping(patience=10, verbose=True)
 
     if log:
         logger.log_stats(model=model, device=device, step=0, log_and_att_hists=True)
@@ -268,6 +272,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         scores, sequence_scores = evaluate(model=model, dataloader=validationset_eval_dataloader,
                                                            task_definition=task_definition, device=device)
                         scoring_loss = scores[early_stopping_target_id]['loss']
+                        if second_phase:
+                            early_stopping(scoring_loss, model)
 
                         print(f" ...done!")
                         tprint(f"[validation] u: {update:07d}; scores: {scores};")
@@ -293,9 +299,11 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                             # saver_loader.save_to_file(filename=f'best_so_far_u{update}.tar.gzip')
 
                     if update >= n_updates:
-                        logger.log_motifs(list(model.sequence_embedding.parameters())[0].cpu().detach().numpy(),
-                                          step=update)
                         break
+
+                if early_stopping.early_stop:
+                    print("Early stopping")
+                    break
             update_progess_bar.close()
         finally:
             # In any case, save the current model and best model to a file
@@ -304,7 +312,10 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
             saver_loader.save_to_file(filename=f'best_u{update}.tar.gzip')
             print('Finished Training!')
             if log:
-                logger.log_stats(model=model, device=device, step=n_updates, log_and_att_hists=True)
+                logger.log_stats(model=model, device=device, step=n_updates, log_and_att_hists=True, log_per_kernel=True)
+                logger.log_motifs(list(model.sequence_embedding.parameters())[0].cpu().detach().numpy(),
+                                  step=update)
+
     except Exception as e:
         with open(logfile, 'a') as lf:
             print(f"Exception: {e}", file=lf)
