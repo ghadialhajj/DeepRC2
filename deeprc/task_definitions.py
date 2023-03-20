@@ -36,6 +36,51 @@ class Sequence_Loss(torch.nn.Module):
         return torch.mean(torch.mul(elem_wise_product, -1))
 
 
+class Sequence_CSL(torch.nn.Module):
+    def __init__(self, temp_scale: float = 1):
+        super(Sequence_CSL, self).__init__()
+        self.temp_scale = temp_scale
+
+    def sim_measure(self, vec: torch.Tensor, vec_2: torch.Tensor):
+        return torch.matmul(vec, vec_2.T) / (torch.linalg.vector_norm(vec) * torch.linalg.vector_norm(vec_2, dim=1))
+
+    def single_loss(self, pos_vec_1: torch.Tensor, pos_vec_2: torch.Tensor, neg_vecs: torch.Tensor):
+        sim_pos = torch.exp(self.sim_measure(pos_vec_1, pos_vec_2)).squeeze()
+        sim_neg = torch.exp(self.sim_measure(pos_vec_1, neg_vecs)).sum(dim=1)
+        den = sim_pos + sim_neg
+        return -torch.log(sim_pos / den)
+
+    def forward(self, pos_mat: torch.Tensor, neg_mat: torch.Tensor, m: int = 1) -> torch.Tensor:
+        """Calculate the custom loss for sequence-level labbels
+
+        Parameters
+        ----------
+        pos_vec: torch.Tensor
+            shape = [emb_size]
+        neg_vecs:  torch.Tensor
+            shape = [n_neg_samples, emb_size]
+
+        Returns
+        ---------
+        negative_scores_sum: torch.Tensor
+            Target values of all samples from `dataframe` as np.ndarray of datatype `np.float` and shape
+            `(n_samples, self.n_output_features)`.
+        """
+        num_samples = pos_mat.shape[0]
+
+        results = []
+        for _ in range(m):
+            indices = np.random.choice(num_samples, 2, replace=False)
+            a_sample = pos_mat[indices[0], None]
+            b_sample = pos_mat[indices[1], None]
+            N_samples = neg_mat[np.random.choice(neg_mat.shape[0], m, replace=False)]
+
+            result = self.single_loss(a_sample, b_sample, N_samples) + self.single_loss(b_sample, a_sample, N_samples)
+            results.append(result)
+
+        return torch.tensor(results)
+
+
 class Target(torch.nn.Module):
     def __init__(self, target_id: str, n_output_features: int, task_weight: float = 1.):
         """Base class for targets. 
@@ -169,6 +214,7 @@ class Sequence_Target(Target):
         """
         super().__init__(target_id=target_id, n_output_features=1)
         self.target_loss = Sequence_Loss()
+        self.contrastive_loss = Sequence_CSL()
         self.binary_cross_entropy_loss = torch.nn.BCEWithLogitsLoss(reduction='mean',
                                                                     pos_weight=torch.tensor(pos_weight))
 
@@ -212,7 +258,7 @@ class Sequence_Target(Target):
         # return self.target_loss(raw_outputs, targets)
         return self.binary_cross_entropy_loss(raw_outputs, targets)
 
-    def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor) -> dict:
+    def get_scores(self, P, N, raw_outputs: torch.Tensor, targets: torch.Tensor) -> dict:
         """Get scores for this task as dictionary containing AUC, BACC, F1, and loss
 
         Parameters
@@ -244,8 +290,9 @@ class Sequence_Target(Target):
         bacc = metrics.balanced_accuracy_score(y_true=labels, y_pred=predictions_thresholded)
         f1 = metrics.f1_score(y_true=labels, y_pred=predictions_thresholded, average='binary', pos_label=1)
         loss = self.loss_function(raw_outputs=raw_outputs, targets=targets).detach().mean().cpu().item()
+        contrastive_loss = self.contrastive_loss(P, N)
         return dict(pr_auc=pr_auc, seq_roc_auc=roc_auc, seq_bacc=bacc, seq_f1=f1, seq_loss=loss,
-                    seq_avg_score_diff=avg_score_diff)
+                    seq_avg_score_diff=avg_score_diff, contrastive_loss=contrastive_loss)
 
 
 class BinaryTarget(Target):
