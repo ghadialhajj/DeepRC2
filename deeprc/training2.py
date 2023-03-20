@@ -68,7 +68,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
           num_torch_threads: int = 3, learning_rate: float = 1e-4, l1_weight_decay: float = 0,
           l2_weight_decay: float = 0, log_training_stats_at: int = int(1e2), evaluate_at: int = int(5e3),
           ignore_missing_target_values: bool = True, prop: float = 0.7, train_then_freeze: bool = True,
-          log: bool = True):
+          log: bool = True, staged_training: bool = True, plain_DeepRC: bool = False):
     # initialize the early_stopping object
     early_stopping = EarlyStopping(patience=20, verbose=True)
 
@@ -122,12 +122,12 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
             update_progess_bar = tqdm(total=n_updates, disable=not show_progress, position=0,
                                       desc=f"loss={np.nan:6.4f}")
             data = next(iter(stage1_dataloader))
-            # Get samples as lists
-            targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence, sample_ids = data
 
             model.sequence_reduction_fraction = 1.1
             second_phase = False
             while update < int(prop * n_updates):
+                targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence, sample_ids = data
+
                 # Apply attention-based sequence reduction and create minibatch
                 with torch.no_grad():
                     targets, inputs, sequence_lengths, sequence_labels, sequence_pools, n_sequences = \
@@ -158,15 +158,16 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                 # Add to tensorboard
                 if update % log_training_stats_at == 0 or update == 1:
                     log_stats(attention_loss, device, l1reg_loss, log, log_training_stats_at, logger, loss, model,
-                              targets, task_definition, update)
+                              targets, task_definition, update, second_phase=second_phase)
 
                 # Calculate scores and loss on training set and validation set
                 if update % evaluate_at == 0 or update == n_updates or update == 1:
                     log_scores(best_validation_loss, device, early_stopping, early_stopping_target_id, model,
                                saver_loader, second_phase, state, task_definition, tprint, trainingset_eval_dataloader,
                                update, validationset_eval_dataloader)
-
-            while update < int((1 - prop) * n_updates):
+            second_phase = True
+            model.sequence_reduction_fraction = 0.1
+            while update < int(n_updates):
                 for data in trainingset_dataloader:
                     if train_then_freeze:
                         for param in chain(model.attention_nn.parameters(), model.sequence_embedding.parameters()):
@@ -199,13 +200,14 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     optimizer.step()
 
                     update += 1
+                    # print("update: ", update)
                     update_progess_bar.update()
                     update_progess_bar.set_description(desc=f"loss={loss.item():6.4f}", refresh=True)
 
                     # Add to tensorboard
                     if update % log_training_stats_at == 0 or update == 1:
                         log_stats(None, device, l1reg_loss, log, log_training_stats_at, logger, loss, model,
-                                  targets, task_definition, update, second_phase)
+                                  targets, task_definition, update, second_phase, logit_outputs=logit_outputs)
 
                     # Calculate scores and loss on training set and validation set
                     if update % evaluate_at == 0 or update == n_updates or update == 1:
@@ -222,7 +224,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         logger.log_motifs(list(model.sequence_embedding.parameters())[0].cpu().detach().numpy(),
                                           step=update)
                         break
-                update_progess_bar.close()
+            update_progess_bar.close()
 
         finally:
             # In any case, save the current model and best model to a file
