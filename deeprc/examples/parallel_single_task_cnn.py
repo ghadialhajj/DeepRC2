@@ -65,14 +65,14 @@ seeds = [922, 92413, 514, 4143, 7543]
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
 dataset_type = "trb_dataset"
 base_results_dir = "/results/singletask_cnn/ideal"
-strategies = ["TASTER", "T-SAFTE"]  #"TASTER", "TASTE", "TE",  , "FG", "T-SAFTE"]
+strategies = ["TASTER", "T-SAFTE", "PDRC"]  #"TASTER", "TASTE", "TE",  , "FG", "T-SAFTE"]
 datasets = ["AIRR"]
 
 for datastet in datasets:
     print(datastet)
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
-              "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.5,
-              "dataset": datastet, "pos_weight": 500, "Branch": "HUNT",
+              "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 1/200,
+              "dataset": datastet, "pos_weight": 500, "Branch": "HypoHUNTus",
               "dataset_type": dataset_type}
     # Append current timestamp to results directory
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])

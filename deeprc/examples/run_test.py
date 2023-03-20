@@ -15,7 +15,7 @@ import torch
 from deeprc.task_definitions import TaskDefinition, BinaryTarget, MulticlassTarget, RegressionTarget, Sequence_Target
 from deeprc.dataset_readers import make_dataloaders, no_sequence_count_scaling
 from deeprc.architectures import DeepRC, SequenceEmbeddingCNN, AttentionNetwork, OutputNetwork
-from deeprc.training import train, evaluate
+from deeprc.training2 import train, evaluate
 import wandb
 import os
 import datetime
@@ -26,16 +26,16 @@ from deeprc.utils import Logger
 #
 parser = argparse.ArgumentParser()
 parser.add_argument('--n_updates', help='Number of updates to train for. Recommended: int(1e5). Default: int(1e3)',
-                    type=int, default=int(500))
+                    type=int, default=int(20e3))
 # type=int, default=int(20))
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(50))
+                    type=int, default=int(1e3))
 # type=int, default=int(4))
 parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
                                                     'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(50))
+                    type=int, default=int(1e3))
 # type=int, default=int(2))
 parser.add_argument('--kernel_size', help='Size of 1D-CNN kernels (=how many sequence characters a CNN kernel spans).'
                                           'Default: 9',
@@ -61,18 +61,18 @@ device = torch.device(device_name)
 
 seeds = [92, 9241, 5149, 41, 720, 813, 48525]
 
-root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
-# root_dir = "/storage/ghadia/DeepRC2/deeprc"
+# root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
+root_dir = "/storage/ghadia/DeepRC2/deeprc"
 dataset_type = "trb_dataset"
 base_results_dir = "/results/singletask_cnn/ideal"
-strategies = ["TASTER", "T-SAFTE"]  #"TASTER", "TASTE", "TE",  , "FG", "T-SAFTE"]
+strategies = ["TASTER"]  #"TASTER", "TASTE", "TE",  , "FG", "T-SAFTE"]
 datasets = ["AIRR"]
 
 
 for datastet in datasets:
     print(datastet)
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
-              "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.2,
+              "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.02,
               "dataset": datastet, "pos_weight": 100, "Branch": "AdHoc1",
               "dataset_type": dataset_type}
     # Append current timestamp to results directory
