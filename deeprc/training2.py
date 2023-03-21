@@ -224,8 +224,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
                     if early_stopping.early_stop:
                         print("Early stopping")
-                        logger.log_motifs(list(model.sequence_embedding.parameters())[0].cpu().detach().numpy(),
-                                          step=update)
+                        # logger.log_motifs(list(model.sequence_embedding.parameters())[0].cpu().detach().numpy(),
+                        #                   step=update)
                         break
             update_progess_bar.close()
 
