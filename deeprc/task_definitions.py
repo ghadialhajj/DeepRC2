@@ -81,7 +81,7 @@ class Sequence_CSL(torch.nn.Module):
             result = self.single_loss(a_sample, b_sample, N_samples) + self.single_loss(b_sample, a_sample, N_samples)
             results.append(result)
 
-        return torch.stack(results) / (self.num_pairs*0.25)
+        return torch.stack(results) / (self.num_pairs)
 
 
 class Target(torch.nn.Module):

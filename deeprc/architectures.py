@@ -451,7 +451,7 @@ class DeepRC(nn.Module):
             # Get attention weights for single bag (shape: (n_sequences_per_bag, 1))
             emb_seqs = mb_emb_seqs[start_i:start_i + n_seqs]
             # Calculate attention activations (softmax over n_sequences_per_bag) (shape: (n_sequences_per_bag, 1))
-            attention_weights = torch.softmax(attention_weights/5, dim=0)
+            attention_weights = torch.softmax(attention_weights, dim=0)
             # Apply attention weights to sequence features (shape: (n_sequences_per_bag, d_v))
             emb_reps_after_attention = emb_seqs * attention_weights
             # Compute weighted sum over sequence features after attention (format: (d_v,))
