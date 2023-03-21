@@ -30,11 +30,11 @@ parser.add_argument('--n_updates', help='Number of updates to train for. Recomme
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(1e3))
+                    type=int, default=int(5e2))
 # type=int, default=int(4))
 parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
                                                     'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(1e3))
+                    type=int, default=int(5e2))
 # type=int, default=int(2))
 parser.add_argument('--kernel_size', help='Size of 1D-CNN kernels (=how many sequence characters a CNN kernel spans).'
                                           'Default: 9',
@@ -65,15 +65,15 @@ seeds = [922, 92413, 514, 4143, 7543]
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
 dataset_type = "trb_dataset"
 base_results_dir = "/results/singletask_cnn/ideal"
-strategies = ["TASTER", "T-SAFTE", "PDRC"]  #"TASTER", "TASTE", "TE",  , "FG", "T-SAFTE"]
+strategies = ["TASTER", "T-SAFTE"]  #"TASTER", "PDRC", "TASTE", "TE",  , "FG", "T-SAFTE"]
 datasets = ["AIRR"]
 
 for datastet in datasets:
     print(datastet)
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 1/200,
-              "dataset": datastet, "pos_weight": 500, "Branch": "HypoHUNTus",
-              "dataset_type": dataset_type}
+              "dataset": datastet, "pos_weight": 500, "Branch": "CSL",
+              "dataset_type": dataset_type, "tau": 0.072939194042248}
     # Append current timestamp to results directory
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
 
@@ -153,7 +153,7 @@ for datastet in datasets:
         torch.manual_seed(seeds[args.idx])
         np.random.seed(seeds[args.idx])
 
-        run = wandb.init(project="HypoHUNTus", group=group, reinit=True)  # , tags=config["tag"])
+        run = wandb.init(project="CSL", group=group, reinit=True)  # , tags=config["tag"])
         run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
         # DeepRC_PlainW_StanData, Explore_wFPs
 

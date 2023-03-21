@@ -138,14 +138,17 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                 optimizer.zero_grad()
 
                 # Calculate predictions from reduced sequences,
-                _, attention_outputs, _ = model(inputs_flat=inputs,
+                _, _, _, attention_keys = model(inputs_flat=inputs,
                                                 sequence_lengths_flat=sequence_lengths,
                                                 sequence_labels_flat=sequence_labels,
                                                 n_sequences_per_bag=n_sequences)
 
                 l1reg_loss = (torch.mean(torch.stack([p.abs().float().mean() for p in model.parameters()])))
-                attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(), sequence_labels)
-                loss = l1reg_loss * l1_weight_decay + attention_loss
+                n_sequences_per_class = [x for _, x in sorted(zip(targets, n_sequences.tolist()))]
+                N, P = torch.split(attention_keys, n_sequences_per_class)
+                attention_loss = task_definition.get_sequence_cl_loss(pos_seq_keys=P, neg_seq_keys=N)
+                # todo make it hidden
+                loss = l1reg_loss * l1_weight_decay + attention_loss[task_definition.__sequence_target_ids__[0]]
 
                 # Perform update
                 loss.backward()
@@ -185,10 +188,10 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     optimizer.zero_grad()
 
                     # Calculate predictions from reduced sequences,
-                    logit_outputs, _, _ = model(inputs_flat=inputs,
-                                                sequence_lengths_flat=sequence_lengths,
-                                                sequence_labels_flat=sequence_labels,
-                                                n_sequences_per_bag=n_sequences)
+                    logit_outputs, *_ = model(inputs_flat=inputs,
+                                              sequence_lengths_flat=sequence_lengths,
+                                              sequence_labels_flat=sequence_labels,
+                                              n_sequences_per_bag=n_sequences)
 
                     l1reg_loss = (torch.mean(torch.stack([p.abs().float().mean() for p in model.parameters()])))
                     pred_loss = task_definition.get_loss(raw_outputs=logit_outputs, targets=targets,

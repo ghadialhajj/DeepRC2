@@ -235,10 +235,10 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
                 targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence)
 
             # Compute predictions from reduced sequences
-            raw_outputs, attention_outputs, emb_reps_after_attention = model(inputs_flat=inputs,
-                                                                             sequence_lengths_flat=sequence_lengths,
-                                                                             sequence_labels_flat=sequence_labels,
-                                                                             n_sequences_per_bag=n_sequences)
+            raw_outputs, attention_outputs, emb_reps_after_attention, _ = model(inputs_flat=inputs,
+                                                                                sequence_lengths_flat=sequence_lengths,
+                                                                                sequence_labels_flat=sequence_labels,
+                                                                                n_sequences_per_bag=n_sequences)
 
             # Store predictions and labels
             all_logits.append(raw_outputs.detach())
@@ -275,7 +275,6 @@ def perform_tsne(split_rep_embs):
 
 
 def plot_motifs(motif_matrix, num_aas: int = 3, kernel_size: int = 5):
-
     indices = np.argsort(-motif_matrix, axis=1)[:, :num_aas]
 
     mask = np.zeros_like(motif_matrix, dtype=bool)
@@ -293,7 +292,7 @@ def plot_motifs(motif_matrix, num_aas: int = 3, kernel_size: int = 5):
     # create Logo object
     crp_logo = logomaker.Logo(matrix_df,
                               shade_below=.5,
-                              fade_below=.5,)
+                              fade_below=.5, )
 
     crp_logo.style_spines(visible=False)
     crp_logo.style_spines(spines=['left', 'bottom'], visible=True)

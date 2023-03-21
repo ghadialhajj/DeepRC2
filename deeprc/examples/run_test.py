@@ -61,8 +61,8 @@ device = torch.device(device_name)
 
 seeds = [92, 9241, 5149, 41, 720, 813, 48525]
 
-# root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
-root_dir = "/storage/ghadia/DeepRC2/deeprc"
+root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
+# root_dir = "/storage/ghadia/DeepRC2/deeprc"
 dataset_type = "trb_dataset"
 base_results_dir = "/results/singletask_cnn/ideal"
 strategies = ["TASTER"]  #"TASTER", "TASTE", "TE",  , "FG", "T-SAFTE"]

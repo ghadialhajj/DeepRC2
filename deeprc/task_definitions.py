@@ -5,9 +5,10 @@ Specifications of targets to train DeepRC model on
 Author -- Michael Widrich
 Contact -- widrich@ml.jku.at
 """
+from typing import List, Union
+
 import numpy as np
 import pandas as pd
-from typing import List, Union
 import torch
 from sklearn import metrics
 
@@ -37,8 +38,10 @@ class Sequence_Loss(torch.nn.Module):
 
 
 class Sequence_CSL(torch.nn.Module):
-    def __init__(self, temp_scale: float = 1):
+    def __init__(self, temp_scale: float = 1, num_pairs: int = 1, num_neg: int = 1):
         super(Sequence_CSL, self).__init__()
+        self.num_neg = num_neg
+        self.num_pairs = num_pairs
         self.temp_scale = temp_scale
 
     def sim_measure(self, vec: torch.Tensor, vec_2: torch.Tensor):
@@ -50,8 +53,8 @@ class Sequence_CSL(torch.nn.Module):
         den = sim_pos + sim_neg
         return -torch.log(sim_pos / den)
 
-    def forward(self, pos_mat: torch.Tensor, neg_mat: torch.Tensor, m: int = 1) -> torch.Tensor:
-        """Calculate the custom loss for sequence-level labbels
+    def forward(self, pos_seq_keys: torch.Tensor, neg_seq_keys: torch.Tensor) -> torch.Tensor:
+        """Calculate the custom loss for sequence-level labels
 
         Parameters
         ----------
@@ -66,19 +69,19 @@ class Sequence_CSL(torch.nn.Module):
             Target values of all samples from `dataframe` as np.ndarray of datatype `np.float` and shape
             `(n_samples, self.n_output_features)`.
         """
-        num_samples = pos_mat.shape[0]
+        num_samples = pos_seq_keys.shape[0]
 
         results = []
-        for _ in range(m):
+        for _ in range(self.num_pairs):
             indices = np.random.choice(num_samples, 2, replace=False)
-            a_sample = pos_mat[indices[0], None]
-            b_sample = pos_mat[indices[1], None]
-            N_samples = neg_mat[np.random.choice(neg_mat.shape[0], m, replace=False)]
+            a_sample = pos_seq_keys[indices[0], None]
+            b_sample = pos_seq_keys[indices[1], None]
+            N_samples = neg_seq_keys[np.random.choice(neg_seq_keys.shape[0], self.num_neg, replace=False)]
 
             result = self.single_loss(a_sample, b_sample, N_samples) + self.single_loss(b_sample, a_sample, N_samples)
             results.append(result)
 
-        return torch.tensor(results)
+        return torch.stack(results) / self.num_pairs
 
 
 class Target(torch.nn.Module):
@@ -258,7 +261,7 @@ class Sequence_Target(Target):
         # return self.target_loss(raw_outputs, targets)
         return self.binary_cross_entropy_loss(raw_outputs, targets)
 
-    def get_scores(self, P, N, raw_outputs: torch.Tensor, targets: torch.Tensor) -> dict:
+    def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor) -> dict:
         """Get scores for this task as dictionary containing AUC, BACC, F1, and loss
 
         Parameters
@@ -290,9 +293,8 @@ class Sequence_Target(Target):
         bacc = metrics.balanced_accuracy_score(y_true=labels, y_pred=predictions_thresholded)
         f1 = metrics.f1_score(y_true=labels, y_pred=predictions_thresholded, average='binary', pos_label=1)
         loss = self.loss_function(raw_outputs=raw_outputs, targets=targets).detach().mean().cpu().item()
-        contrastive_loss = self.contrastive_loss(P, N)
         return dict(pr_auc=pr_auc, seq_roc_auc=roc_auc, seq_bacc=bacc, seq_f1=f1, seq_loss=loss,
-                    seq_avg_score_diff=avg_score_diff, contrastive_loss=contrastive_loss)
+                    seq_avg_score_diff=avg_score_diff)
 
 
 class BinaryTarget(Target):
@@ -769,6 +771,10 @@ class TaskDefinition(torch.nn.Module):
         """Get IDs for all `deeprc.task_definitions.Target` instances."""
         return self.__target_ids__
 
+    def get_sequence_task_ids(self) -> tuple:
+        """Get IDs for all `deeprc.task_definitions.Target` instances."""
+        return self.__sequence_target_ids__
+
     def get_task_weights(self) -> np.ndarray:
         """Get task weights for all `deeprc.task_definitions.Target` instances. The combined loss is computed as
          weighted sum of the individual task losses times their respective tasks-weights."""
@@ -826,5 +832,30 @@ class TaskDefinition(torch.nn.Module):
             See `deeprc/examples/` for examples.
         """
         scores = dict([(t.get_id(), t.get_scores(raw_outputs=raw_attentions, targets=sequence_targets))
+                       for t in self.__sequence_targets__])
+        return scores
+
+    def get_sequence_cl_loss(self, pos_seq_keys: torch.Tensor, neg_seq_keys: torch.Tensor) -> dict:
+        """Get scores for this task as dictionary
+
+        Parameters
+        ----------
+        raw_attentions: torch.Tensor
+             Raw output of the *attention* network for this task as torch.Tensor of shape
+            `(n_sequences_in_batch, self.n_output_features)`
+        sequence_targets: torch.Tensor
+             Targets for this task, as provided directly by the model as torch.Tensor of shape
+             `(n_sequences_in_batch, self.n_output_features)`
+
+        Returns
+        ---------
+        scores: dict
+            Nested dictionary of format `{task_id: {score_id: score_value}}`, e.g.
+            `{"binary_task_1": {"auc": 0.6, "bacc": 0.5, "f1": 0.2, "loss": 0.01}}`. The scores returned are computed
+            using the .get_scores() methods of the individual target instances (e.g.
+            `deeprc.task_definitions.BinaryTarget()`).
+            See `deeprc/examples/` for examples.
+        """
+        scores = dict([(t.get_id(), t.contrastive_loss(pos_seq_keys=pos_seq_keys, neg_seq_keys=neg_seq_keys))
                        for t in self.__sequence_targets__])
         return scores
