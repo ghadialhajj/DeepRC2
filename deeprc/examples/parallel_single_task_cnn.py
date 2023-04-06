@@ -123,7 +123,7 @@ for datastet in datasets:
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.3,
               "dataset": datastet, "pos_weight": 100, "Branch": "AdHoc1",
-              "dataset_type": dataset_type, "tau": 0.072939194042248}
+              "dataset_type": dataset_type}
     # Append current timestamp to results directory
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
 
