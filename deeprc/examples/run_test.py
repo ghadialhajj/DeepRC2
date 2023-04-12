@@ -56,7 +56,7 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 args = parser.parse_args()
 # Set computation device
 device_name = "cuda:0"  # + str(int((args.ideal + args.idx)%2))
-with_test = True
+with_test = False
 device = torch.device(device_name)
 
 seeds = [92, 9241, 5149, 41, 720, 813, 48525]
@@ -99,10 +99,11 @@ for datastet in datasets:
         metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/metadata.tsv",
         n_worker_processes=4,
         repertoiresdata_path=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/repertoires",
-        metadata_file_id_column='ID',
-        sequence_column='amino_acid',
-        sequence_counts_column='templates',
-        sequence_labels_column='label',
+        metadata_file_id_column='filename',
+        sequence_column='cdr3_aa',
+        sequence_counts_column=None,
+        sequence_pools_column='matched',
+        sequence_labels_column='matched',
         sample_n_sequences=args.sample_n_sequences,
         sequence_counts_scaling_fn=no_sequence_count_scaling,
         with_test=with_test

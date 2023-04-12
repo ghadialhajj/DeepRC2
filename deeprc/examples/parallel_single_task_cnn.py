@@ -55,7 +55,7 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:0"  # + str(int((args.ideal + args.idx)%2))
+device_name = "cuda:1"  # + str(int((args.ideal + args.idx)%2))
 with_test = False
 device = torch.device(device_name)
 
@@ -63,14 +63,14 @@ seeds = [92, 9241, 5149, 41, 720, 813, 48525]
 
 # root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
-dataset_type = "all_observed"
+dataset_type = "emerson"
 # root_dir = "/itf-fi-ml/shared/users/ghadia/deeprc"
 # root_dir = "/fp/homes01/u01/ec-ghadia/DeepRC2/deeprc"
 # root_dir = "/cluster/work/projects/ec35/ec-ghadia/"
 base_results_dir = "/results/singletask_cnn/ideal"
 # , "tag": ["AdHoc1.3.1"]}
 # n_20_op_1_po_0.100%25_pu_0
-strategies = ["TASTE"]  #"TASTER", "FG", "TE", "PDRC" , "T-SAFTE"]
+strategies = ["TASTE", "FG", "TE", "PDRC", "TASTER"]  # , "T-SAFTE"]
 # datasets = ["n_600_wr_1.500%_po_100%", "n_600_wr_2.000%_po_100%", "n_600_wr_3.000%_po_100%"]
 # datasets = ["n_600_wr_0.150%_po_5%_nmotif_10_fpgn_0.150%", "n_600_wr_0.150%_po_20%_nmotif_10_fpgn_0.150%",
 #             "n_600_wr_0.150%_po_50%_nmotif_10_fpgn_0.150%"]
@@ -78,7 +78,7 @@ strategies = ["TASTE"]  #"TASTER", "FG", "TE", "PDRC" , "T-SAFTE"]
 # datasets = ["n_600_wr_0.150%_po_100%_nmotif_10_sw_20%_po2_0%", "n_600_wr_0.150%_po_80%_nmotif_10_sw_20%_po2_20%",
 #             "n_600_wr_0.150%_po_60%_nmotif_10_sw_20%_po2_40%", "n_600_wr_0.150%_po_100%_nmotif_10_sw_80%_po2_0%",
 #             "n_600_wr_0.150%_po_80%_nmotif_10_sw_80%_po2_20%", "n_600_wr_0.150%_po_60%_nmotif_10_sw_80%_po2_40%"]
-datasets = ["n_600_wr_0.005%_po_100%"]  #"n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
+datasets = ["AIRR/development_data"]  #"n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
 
 print("defined variables")
 
@@ -122,7 +122,7 @@ for datastet in datasets:
     print(datastet)
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.3,
-              "dataset": datastet, "pos_weight": 100, "Branch": "AdHoc1",
+              "dataset": datastet, "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "Emerson",
               "dataset_type": dataset_type}
     # Append current timestamp to results directory
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
@@ -133,11 +133,11 @@ for datastet in datasets:
     # Assume we want to train on 1 main task as binary task at column 'binary_target_1' of our metadata file.
     task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
         BinaryTarget(  # Add binary classification task with sigmoid output function
-            column_name='binary_target_1',  # Column name of task in metadata file
-            true_class_value='+',  # Entries with value '+' will be positive class, others will be negative class
-            pos_weight=1.,  # We can up- or down-weight the positive class if the classes are imbalanced
+            column_name='CMV',  # Column name of task in metadata file
+            true_class_value='True',  # Entries with value 'True' will be positive class, others will be negative class
+            pos_weight=config["pos_weight_rep"],  # We can up- or down-weight the positive class if the classes are imbalanced
         ),
-        Sequence_Target(pos_weight=config["pos_weight"]),
+        Sequence_Target(pos_weight=config["pos_weight_seq"]),
     ]).to(device=device)
     #
     # Get dataset
@@ -145,13 +145,15 @@ for datastet in datasets:
     # Get data loaders for training set and training-, validation-, and test-set in evaluation mode (=no random subsampling)
     trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
         task_definition=task_definition,
-        metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/metadata.tsv",
+        metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/development.csv",
+        metadata_file_column_sep=",",
         n_worker_processes=4,
         repertoiresdata_path=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/repertoires",
-        metadata_file_id_column='ID',
-        sequence_column='amino_acid',
-        sequence_counts_column='templates',
-        sequence_labels_column='label',
+        metadata_file_id_column='filename',
+        sequence_column='cdr3_aa',
+        sequence_counts_column=None,
+        sequence_pools_column='matched',
+        sequence_labels_column='matched',
         sample_n_sequences=args.sample_n_sequences,
         sequence_counts_scaling_fn=no_sequence_count_scaling,
         with_test=with_test
@@ -166,23 +168,23 @@ for datastet in datasets:
     for strategy in strategies:
         print(strategy)
         if strategy == "TE":
-            group = f"TE_n_up_{args.n_updates}_pw_{config['pos_weight']}"
+            group = f"TE_n_up_{args.n_updates}_pw_{config['pos_weight_seq']}"
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                            "plain_DeepRC": False})
         elif strategy == "TASTE":
-            group = f"TASTE_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight']}"
+            group = f"TASTE_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight_seq']}"
             config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
                            "plain_DeepRC": False, "rep_loss_only": False})
         elif strategy == "TASTER":
-            group = f"TASTER_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight']}"
+            group = f"TASTER_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight_seq']}"
             config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
                            "plain_DeepRC": False, "rep_loss_only": True})
         elif strategy == "T-SAFTE":
-            group = f"T-SAFTE_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight']}"
+            group = f"T-SAFTE_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight_seq']}"
             config.update({"train_then_freeze": True, "staged_training": True, "forced_attention": False,
                            "plain_DeepRC": False})
         elif strategy == "FG":
-            group = f"FG_n_up_{args.n_updates}_pw_{config['pos_weight']}"
+            group = f"FG_n_up_{args.n_updates}_pw_{config['pos_weight_seq']}"
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": True,
                            "plain_DeepRC": True})
         elif strategy == "PDRC":
@@ -196,12 +198,12 @@ for datastet in datasets:
         torch.manual_seed(seeds[args.idx])
         np.random.seed(seeds[args.idx])
 
-        run = wandb.init(project="BackToFG", group=group, reinit=True)  # , tags=config["tag"])
+        run = wandb.init(project="Emerson", group=group, reinit=True)  # , tags=config["tag"])
         run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
         # DeepRC_PlainW_StanData, Explore_wFPs
-        if args.idx == 0:
-            df_dict = get_sample_reps()
-            log_reps(df_dict)
+        # if args.idx == 0:
+        #     df_dict = get_sample_reps()
+        #     log_reps(df_dict)
 
         wandb.config.update(args)
         wandb.config.update(config)
@@ -235,7 +237,7 @@ for datastet in datasets:
         print("training")
         train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
               trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
-              early_stopping_target_id='binary_target_1',  # Get model that performs best for this task
+              early_stopping_target_id='CMV',  # Get model that performs best for this task
               validationset_eval_dataloader=validationset_eval, logger=logger, n_updates=args.n_updates,
               evaluate_at=args.evaluate_at, device=device, results_directory=f"{root_dir}{results_dir}",
               prop=config["prop"],
@@ -251,7 +253,7 @@ for datastet in datasets:
         if with_test:
             scores, sequence_scores = evaluate(model=model, dataloader=testset_eval, task_definition=task_definition,
                                                device=device)
-            wandb.run.summary.update(scores["binary_target_1"])
+            wandb.run.summary.update(scores["CMV"])
             wandb.run.summary.update(sequence_scores["sequence_class"])
             print(f"Test scores:\n{scores}")
         wandb.finish()
