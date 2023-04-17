@@ -7,6 +7,7 @@ Contact -- widrich@ml.jku.at
 """
 import os
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import requests
@@ -84,23 +85,24 @@ class Logger():
             motif_matrix = cnn_weights[motif_idx].T
             fig = plot_motifs(motif_matrix)
             wandb.log({f'Motifs/motif_{str(motif_idx)}': wandb.Image(fig)}, step=step)
+            plt.close(fig)
 
     def log_stats(self, model: torch.nn.Module, device=torch.device('cuda:0'), step: int = 0,
-                  log_and_att_hists: bool = True, log_per_kernel: bool = False):
+                  log_and_att_hists: bool = False, log_per_kernel: bool = False):
         """
         Logs model statistics including repertoire embeddings, logits, and attentions for each dataloader.
         """
+        print("Logging stats:")
         for dl_name, dl in self.dataloaders.items():
             split_logits, split_attentions, split_rep_embs = self.get_values_per_dl(model, dl, device=device)
             split_rep_embs_pca = perform_pca(split_rep_embs)
             # split_rep_embs_tsne = perform_tsne(split_rep_embs)
             self.log_repertoire_rep(dl_name, split_rep_embs_pca, None, step)
-            if log_per_kernel and dl_name == "validationset_eval":
-                self.log_per_kernel(split_rep_embs)
             if log_and_att_hists:
                 self.log_logits(dl_name, split_logits, step)
-
                 self.log_attention(dl_name, split_attentions, step)
+                if log_per_kernel and dl_name == "validationset_eval":
+                    self.log_per_kernel(split_rep_embs)
 
     def log_repertoire_rep(self, dl_name, split_rep_embs_pca, split_rep_embs_tsne, step):
         self.plot_scatter(pos_vals=split_rep_embs_pca[0], neg_vals=split_rep_embs_pca[1], dl_name=dl_name,
@@ -123,8 +125,7 @@ class Logger():
                             step=step)
 
     def get_values_per_dl(self, model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
-                          show_progress: bool = True,
-                          device: torch.device = torch.device('cuda:0')):
+                          show_progress: bool = True, device: torch.device = torch.device('cuda:0')):
         """Compute DeepRC model scores on given dataset for tasks specified in `task_definition`
 
         Parameters
@@ -167,6 +168,7 @@ class Logger():
 
         # Log the plot
         wandb.log({f"{xaxis_title}/{dl_name}": fig}, step=step)
+        fig.data = []
 
     @staticmethod
     def plot_scatter(pos_vals: list, neg_vals: list, dl_name: str = "", plot_title: str = "", step: int = 0,
@@ -184,6 +186,7 @@ class Logger():
 
         # Log the plot
         wandb.log({f"Repertoire Embeddings/{method}/{dl_name}": fig}, step=step)
+        fig.data = []
 
     def split_outputs(self, all_values, all_targets, flatten: bool = True, sequence_level: bool = False):
         """
@@ -219,8 +222,8 @@ class Logger():
 
     def log_per_kernel(self, split_rep_embs):
         config = dict(opacity=0.6, histnorm="percent", nbinsx=50)
-        split_rep_embs = torch.tensor(np.array(split_rep_embs))
-        for kernel_idx in range(split_rep_embs[0].shape[1]):
+        split_rep_embs = torch.tensor(np.array(split_rep_embs[0]))
+        for kernel_idx in range(split_rep_embs.shape[1]):
             pos_per_dim = split_rep_embs[0, :, kernel_idx]
             neg_per_dim = split_rep_embs[1, :, kernel_idx]
             fig = go.Figure()
