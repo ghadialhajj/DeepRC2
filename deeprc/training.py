@@ -160,7 +160,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
         # Save checkpoint dictionary to RAM object
         saver_loader.save_to_ram(savename=str(update))
-
+        max_auc = 0
         #
         # Start training
         #
@@ -224,31 +224,34 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     update_progess_bar.update()
                     update_progess_bar.set_description(desc=f"loss={total_loss.item():6.4f}", refresh=True)
 
-                    # Add to tensorboard
-                    if update % log_training_stats_at == 0 or update == 1:
-                        if log:
-                            logg_and_att_hists = True if update == 1 or update % (4 * log_training_stats_at) == 0 else False
-                            logger.log_stats(model=model, device=device, step=update, log_and_att_hists=logg_and_att_hists)
-                        group = 'training/'
-                        # Loop through tasks and add losses to tensorboard
-                        pred_losses = task_definition.get_losses(raw_outputs=logit_outputs, targets=targets)
-                        pred_losses = pred_losses.mean(dim=1)  # shape: (n_tasks, n_samples, 1) -> (n_tasks, 1)
-                        for task_id, task_loss in zip(task_definition.get_task_ids(), pred_losses):
-                            wandb.log({f"{group}{task_id}_loss": task_loss}, step=update)  # loss per target
-                        # wandb.log({f"{group}total_task_loss": pred_loss}, step=update)  # sum losses over targets
-                        wandb.log({f"{group}l1reg_loss": l1reg_loss}, step=update)
-                        wandb.log({f"{group}attention_loss": attention_loss}, step=update)
-                        wandb.log({f"{group}total_loss": total_loss},
-                                  step=update)  # sum losses over targets + l1 + att.
+                    if log:
+                        # Add to tensorboard
+                        if update % log_training_stats_at == 0 or update == 1:
+                            if log:
+                                logg_and_att_hists = True if update == 1 or update % (
+                                        4 * log_training_stats_at) == 0 else False
+                                logger.log_stats(model=model, device=device, step=update,
+                                                 log_and_att_hists=logg_and_att_hists)
+                            group = 'training/'
+                            # Loop through tasks and add losses to tensorboard
+                            pred_losses = task_definition.get_losses(raw_outputs=logit_outputs, targets=targets)
+                            pred_losses = pred_losses.mean(dim=1)  # shape: (n_tasks, n_samples, 1) -> (n_tasks, 1)
+                            for task_id, task_loss in zip(task_definition.get_task_ids(), pred_losses):
+                                wandb.log({f"{group}{task_id}_loss": task_loss}, step=update)  # loss per target
+                            # wandb.log({f"{group}total_task_loss": pred_loss}, step=update)  # sum losses over targets
+                            wandb.log({f"{group}l1reg_loss": l1reg_loss}, step=update)
+                            wandb.log({f"{group}attention_loss": attention_loss}, step=update)
+                            wandb.log({f"{group}total_loss": total_loss},
+                                      step=update)  # sum losses over targets + l1 + att.
 
-                        group = 'gradients/'
-                        wandb.log(
-                            {f"{group}sequence_embedding_grad_mean": list(model.sequence_embedding.parameters())[
+                            group = 'gradients/'
+                            wandb.log(
+                                {f"{group}sequence_embedding_grad_mean": list(model.sequence_embedding.parameters())[
+                                    0].grad.mean().cpu().numpy()}, step=update)
+                            wandb.log({f"{group}attention_nn_grad_mean": list(model.attention_nn.parameters())[
                                 0].grad.mean().cpu().numpy()}, step=update)
-                        wandb.log({f"{group}attention_nn_grad_mean": list(model.attention_nn.parameters())[
-                            0].grad.mean().cpu().numpy()}, step=update)
-                        wandb.log({f"{group}output_nn_grad_mean": list(model.output_nn.parameters())[
-                            0].grad.mean().cpu().numpy()}, step=update)
+                            wandb.log({f"{group}output_nn_grad_mean": list(model.output_nn.parameters())[
+                                0].grad.mean().cpu().numpy()}, step=update)
 
                     # Calculate scores and loss on training set and validation set
                     if update % evaluate_at == 0 or update == n_updates or update == 1:
@@ -287,6 +290,10 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                              for score_name, score in task_scores.items()]
 
                         # If we have a new best loss on the validation set, we save the model as new best model
+                        if scores[early_stopping_target_id]['roc_auc'] > max_auc:
+                            max_auc = scores[early_stopping_target_id]['roc_auc']
+
+                        # If we have a new best loss on the validation set, we save the model as new best model
                         if best_validation_loss > scoring_loss:
                             best_validation_loss = scoring_loss
                             tprint(f"  New best validation loss for {early_stopping_target_id}: {scoring_loss}")
@@ -301,9 +308,9 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     if update >= n_updates:
                         break
 
-                if early_stopping.early_stop:
-                    print("Early stopping")
-                    break
+                # if early_stopping.early_stop:
+                #     print("Early stopping")
+                #     break
             update_progess_bar.close()
         finally:
             # In any case, save the current model and best model to a file
@@ -312,7 +319,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
             saver_loader.save_to_file(filename=f'best_u{update}.tar.gzip')
             print('Finished Training!')
             if log:
-                logger.log_stats(model=model, device=device, step=n_updates, log_and_att_hists=True, log_per_kernel=True)
+                logger.log_stats(model=model, device=device, step=n_updates, log_and_att_hists=True,
+                                 log_per_kernel=False)
                 logger.log_motifs(list(model.sequence_embedding.parameters())[0].cpu().detach().numpy(),
                                   step=update)
 
@@ -322,3 +330,4 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
         raise e
     finally:
         close_all()  # Clean up
+    return max_auc
