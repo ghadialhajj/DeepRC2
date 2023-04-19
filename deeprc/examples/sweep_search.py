@@ -72,7 +72,7 @@ task_definition = TaskDefinition(targets=[
 trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
     task_definition=task_definition,
     metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/development.csv",
-    metadata_file_column_sep=",", n_worker_processes=4,
+    metadata_file_column_sep=",", n_worker_processes=2,
     repertoiresdata_path=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/repertoires",
     metadata_file_id_column='filename', sequence_column='cdr3_aa', sequence_counts_column=None,
     sequence_pools_column='matched', sequence_labels_column='matched', sample_n_sequences=config["sample_n_sequences"],
