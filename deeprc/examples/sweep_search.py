@@ -89,7 +89,7 @@ logger = Logger(dataloaders=dl_dict, with_FPs=False)
 # config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
 #                "plain_DeepRC": False})
 # # elif strategy == "PDRC":
-group = f"PDRC_n_up_{args.n_updates}"
+group = f"PDRC_n_up_{config['n_updates']}"
 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                "plain_DeepRC": True})
 
