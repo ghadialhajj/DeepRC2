@@ -11,8 +11,8 @@ import datetime
 from deeprc.utils import Logger
 
 parser = argparse.ArgumentParser()
-# parser.add_argument('--idx', help='Index of the run. Default: 0.',
-#                     type=int, default=0)
+parser.add_argument('--device_id', help='Index of the device. Default: 0.',
+                    type=int, default=0)
 parser.add_argument('--kernel_size', help='Size of 1D-CNN kernels (=how many sequence characters a CNN kernel spans).'
                                           'Default: 9',
                     type=int, default=0)
