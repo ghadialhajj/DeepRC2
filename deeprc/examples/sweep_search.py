@@ -21,7 +21,7 @@ parser.add_argument('--n_kernels', help='Number of kernels in the 1D-CNN. This i
                     type=int, default=0)
 
 args = parser.parse_args()
-device_name = "cuda:0"
+device_name = f"cuda:{args.device_id}"
 with_test = False
 device = torch.device(device_name)
 
