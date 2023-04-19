@@ -98,7 +98,7 @@ print("Dataloaders with lengths: ",
 
 
 def main(idx):
-    run = wandb.init(reinit=True)
+    run = wandb.init(reinit=True, project="Emerson_TE")
     run.name = f"results_idx_{str(idx)}"
     wandb.config.update(config)
     torch.manual_seed(seeds[idx])
