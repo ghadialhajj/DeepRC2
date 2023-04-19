@@ -11,26 +11,32 @@ import datetime
 from deeprc.utils import Logger
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--idx', help='Index of the run. Default: 0.',
-                    type=int, default=0)
+# parser.add_argument('--idx', help='Index of the run. Default: 0.',
+#                     type=int, default=0)
+parser.add_argument('--kernel_size', help='Size of 1D-CNN kernels (=how many sequence characters a CNN kernel spans).'
+                                          'Default: 9',
+                    type=int, default=5)
+parser.add_argument('--n_kernels', help='Number of kernels in the 1D-CNN. This is an important hyper-parameter. '
+                                        'Default: 32',
+                    type=int, default=32)
 
 args = parser.parse_args()
 device_name = "cuda:0"
 with_test = False
 device = torch.device(device_name)
 
-seeds = [92, 9241, 5149, 41, 720, 813, 485, 85, 74]
+seeds = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
-root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
+# root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
 # root_dir = "/storage/ghadia/DeepRC2/deeprc"
 dataset_type = "emerson"
 # root_dir = "/itf-fi-ml/shared/users/ghadia/deeprc"
 # root_dir = "/fp/homes01/u01/ec-ghadia/DeepRC2/deeprc"
-# root_dir = "/cluster/work/projects/ec35/ec-ghadia/"
+root_dir = "/cluster/work/projects/ec35/ec-ghadia/"
 base_results_dir = "/results/singletask_cnn/ideal"
-strategies = ["TE"]  # "TASTE", "FG", "PDRC", "TASTER", , "T-SAFTE"]
-# dataset = "AIRR/development_data"
-dataset = "test_data"
+strategies = ["PDRC"]  # "TASTE", "FG", "TE", "TASTER", , "T-SAFTE"]
+dataset = "AIRR/development_data"
+# dataset = "test_data"
 
 # 2: Define the search space
 sweep_configuration = {
@@ -60,7 +66,7 @@ task_definition = TaskDefinition(targets=[
 # Get data loaders for training set and training-, validation-, and test-set in evaluation mode (=no random subsampling)
 trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
     task_definition=task_definition,
-    metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/test.csv",
+    metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/development.csv",
     metadata_file_column_sep=",", n_worker_processes=4,
     repertoiresdata_path=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/repertoires",
     metadata_file_id_column='filename', sequence_column='cdr3_aa', sequence_counts_column=None,
@@ -75,23 +81,23 @@ logger = Logger(dataloaders=dl_dict, with_FPs=False)
 
 sweep_id = wandb.sweep(sweep=sweep_configuration, project='Emerson_TE')
 
+# config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
+#                "plain_DeepRC": False})
+# # elif strategy == "PDRC":
+# #     group = f"PDRC_n_up_{args.n_updates}"
 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-               "plain_DeepRC": False})
-# elif strategy == "PDRC":
-#     group = f"PDRC_n_up_{args.n_updates}"
-#     config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-#                    "plain_DeepRC": True})
+               "plain_DeepRC": True})
 
 print("Dataloaders with lengths: ",
       ", ".join([f"{str(name)}: {len(loader)}" for name, loader in dl_dict.items()]))
 
 
-def main():
+def main(idx):
     run = wandb.init()
-    run.name = f"results_idx_{str(args.idx)}"
+    run.name = f"results_idx_{str(idx)}"
     wandb.config.update(config)
-    torch.manual_seed(seeds[args.idx])
-    np.random.seed(seeds[args.idx])
+    torch.manual_seed(seeds[idx])
+    np.random.seed(seeds[idx])
 
     sequence_embedding_network = SequenceEmbeddingCNN(n_input_features=20 + 3, kernel_size=wandb.config.kernel_size,
                                                       n_kernels=wandb.config.n_kernels, n_layers=1)
@@ -125,5 +131,8 @@ def main():
         print(f"Test scores:\n{scores}")
 
 
-# Start sweep job.
-wandb.agent(sweep_id, function=main)
+# # Start sweep job.
+# wandb.agent(sweep_id, function=main)
+
+for idx in range(3):
+    main(idx)
