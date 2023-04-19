@@ -32,7 +32,7 @@ seeds = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 dataset_type = "emerson"
 # root_dir = "/itf-fi-ml/shared/users/ghadia/deeprc"
 # root_dir = "/fp/homes01/u01/ec-ghadia/DeepRC2/deeprc"
-root_dir = "/cluster/work/projects/ec35/ec-ghadia/"
+root_dir = "/cluster/work/projects/ec35/ec-ghadia"
 base_results_dir = "/results/singletask_cnn/ideal"
 strategies = ["PDRC"]  # "TASTE", "FG", "TE", "TASTER", , "T-SAFTE"]
 dataset = "AIRR/development_data"
@@ -50,8 +50,8 @@ dataset = "AIRR/development_data"
 # }
 
 
-params = {'n_kernels': [8, 16, 32, 64],
-          'kernel_size': [5, 7, 9]}
+params = {'kernel_size': [5, 7, 9],
+          'n_kernels': [8, 16, 32, 64]}
 
 config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.3,
