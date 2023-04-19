@@ -84,7 +84,7 @@ sweep_id = wandb.sweep(sweep=sweep_configuration, project='Emerson_TE')
 # config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
 #                "plain_DeepRC": False})
 # # elif strategy == "PDRC":
-# #     group = f"PDRC_n_up_{args.n_updates}"
+group = f"PDRC_n_up_{args.n_updates}"
 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                "plain_DeepRC": True})
 
