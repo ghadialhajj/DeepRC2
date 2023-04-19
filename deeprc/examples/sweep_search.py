@@ -59,7 +59,7 @@ config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "dataset_type": dataset_type, "log_training_stats_at": int(2e3), "sample_n_sequences": int(1e4),
           "learning_rate": 1e-4, "n_updates": int(5e4), "evaluate_at": int(5e3),
           # "learning_rate": 1e-4, "n_updates": int(10), "evaluate_at": int(5),
-          "n_kernel": params["n_kernels"][args.n_kernels], "kernel_size": params["kernel_size"][args.n_kernels]}
+          "n_kernels": params["n_kernels"][args.n_kernels], "kernel_size": params["kernel_size"][args.kernel_size]}
 
 # Append current timestamp to results directory
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
