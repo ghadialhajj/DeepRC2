@@ -15,10 +15,10 @@ parser = argparse.ArgumentParser()
 #                     type=int, default=0)
 parser.add_argument('--kernel_size', help='Size of 1D-CNN kernels (=how many sequence characters a CNN kernel spans).'
                                           'Default: 9',
-                    type=int, default=5)
+                    type=int, default=0)
 parser.add_argument('--n_kernels', help='Number of kernels in the 1D-CNN. This is an important hyper-parameter. '
                                         'Default: 32',
-                    type=int, default=32)
+                    type=int, default=0)
 
 args = parser.parse_args()
 device_name = "cuda:0"
@@ -39,22 +39,27 @@ dataset = "AIRR/development_data"
 # dataset = "test_data"
 
 # 2: Define the search space
-sweep_configuration = {
-    'method': 'grid',
-    'metric': {'goal': 'maximize', 'name': 'max_auc_score'},
-    'parameters':
-        {
-            'n_kernels': {'values': [8, 16, 32, 64]},
-            'kernel_size': {'values': [5, 7, 9]},
-        }
-}
+# sweep_configuration = {
+#     'method': 'grid',
+#     'metric': {'goal': 'maximize', 'name': 'max_auc_score'},
+#     'parameters':
+#         {
+#             'n_kernels': {'values': [8, 16, 32, 64]},
+#             'kernel_size': {'values': [5, 7, 9]},
+#         }
+# }
+
+
+params = {'n_kernels': [8, 16, 32, 64],
+          'kernel_size': [5, 7, 9]}
 
 config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.3,
           "dataset": dataset, "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "Emerson",
           "dataset_type": dataset_type, "log_training_stats_at": int(2e3), "sample_n_sequences": int(1e4),
-          # "learning_rate": 1e-4, "n_updates": int(6e4), "evaluate_at": int(5e3)}
-          "learning_rate": 1e-4, "n_updates": int(10), "evaluate_at": int(5)}
+          "learning_rate": 1e-4, "n_updates": int(5e4), "evaluate_at": int(5e3),
+          # "learning_rate": 1e-4, "n_updates": int(10), "evaluate_at": int(5),
+          "n_kernel": params["n_kernels"][args.n_kernels], "kernel_size": params["kernel_size"][args.n_kernels]}
 
 # Append current timestamp to results directory
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
@@ -79,7 +84,7 @@ if with_test:
 
 logger = Logger(dataloaders=dl_dict, with_FPs=False)
 
-sweep_id = wandb.sweep(sweep=sweep_configuration, project='Emerson_TE')
+# sweep_id = wandb.sweep(sweep=sweep_configuration, project='Emerson_TE')
 
 # config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
 #                "plain_DeepRC": False})
@@ -93,7 +98,7 @@ print("Dataloaders with lengths: ",
 
 
 def main(idx):
-    run = wandb.init()
+    run = wandb.init(reinit=True)
     run.name = f"results_idx_{str(idx)}"
     wandb.config.update(config)
     torch.manual_seed(seeds[idx])
