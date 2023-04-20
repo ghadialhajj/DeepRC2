@@ -34,7 +34,7 @@ root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 # root_dir = "/fp/homes01/u01/ec-ghadia"
 # root_dir = "/cluster/work/projects/ec35/ec-ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
-strategies = ["PDRC"]  # "TASTE", "FG", "TE", "TASTER", , "T-SAFTE"]
+strategies = ["TASTE"]  # "PDRC", "FG", "TE", "TASTER", , "T-SAFTE"]
 dataset = "AIRR/development_data"
 # dataset = "test_data"
 
