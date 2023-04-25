@@ -35,7 +35,7 @@ root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 # root_dir = "/fp/homes01/u01/ec-ghadia"
 # root_dir = "/cluster/work/projects/ec35/ec-ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
-strategies = ["PDRC"]  # "TASTE", "FG", "TE", "TASTER", , "T-SAFTE"]
+strategies = ["PDRC"]  #, "TE" "TASTE", "FG", "TASTER", , "T-SAFTE"]
 dataset = "AIRR"
 # dataset = "test_data"
 
@@ -96,10 +96,11 @@ logger = Logger(dataloaders=dl_dict, with_FPs=False)
 
 # sweep_id = wandb.sweep(sweep=sweep_configuration, project='Emerson_TE')
 
+
 # config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
 #                "plain_DeepRC": False})
-# # elif strategy == "PDRC":
-group = f"PDRC_n_up_{config['n_updates']}_ReprAtmpt"
+# elif strategy == "PDRC":
+group = f"PDRC_n_up_{config['n_updates']}"
 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                "plain_DeepRC": True})
 
@@ -108,7 +109,7 @@ print("Dataloaders with lengths: ",
 
 
 def main(idx):
-    run = wandb.init(reinit=True, project="Emerson_TE")
+    run = wandb.init(reinit=True, project="Emerson_TE_Cor_Spl")
     run.name = f"results_idx_{str(idx)}"
     wandb.config.update(config)
     torch.manual_seed(seeds[idx])
@@ -138,12 +139,12 @@ def main(idx):
 
     # logger.log_stats(model=model, device=device, step=config.n_updates)
     wandb.log({'max_auc_score': max_auc})
-    if with_test:
-        scores, sequence_scores = evaluate(model=model, dataloader=testset_eval, task_definition=task_definition,
-                                           device=device)
-        wandb.run.summary.update(scores["CMV"])
-        wandb.run.summary.update(sequence_scores["sequence_class"])
-        print(f"Test scores:\n{scores}")
+    # if with_test:
+    #     scores, sequence_scores = evaluate(model=model, dataloader=testset_eval, task_definition=task_definition,
+    #                                        device=device)
+    #     wandb.run.summary.update(scores["CMV"])
+    #     wandb.run.summary.update(sequence_scores["sequence_class"])
+    #     print(f"Test scores:\n{scores}")
 
 
 # # Start sweep job.
