@@ -56,13 +56,14 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 args = parser.parse_args()
 # Set computation device
 device_name = "cuda:0"  # + str(int((args.ideal + args.idx)%2))
-with_test = False
+with_test = True
 device = torch.device(device_name)
 
 seeds = [92, 9241, 5149, 41, 720, 813, 485, 85, 74]
 
 # root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
-root_dir = "/storage/ghadia/DeepRC2/deeprc"
+# root_dir = "/storage/ghadia/DeepRC2/deeprc"
+root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 dataset_type = "emerson"
 # root_dir = "/itf-fi-ml/shared/users/ghadia/deeprc"
 # root_dir = "/fp/homes01/u01/ec-ghadia/DeepRC2/deeprc"
@@ -78,7 +79,7 @@ strategies = ["TASTE", "FG", "TE", "PDRC", "TASTER"]  # , "T-SAFTE"]
 # datasets = ["n_600_wr_0.150%_po_100%_nmotif_10_sw_20%_po2_0%", "n_600_wr_0.150%_po_80%_nmotif_10_sw_20%_po2_20%",
 #             "n_600_wr_0.150%_po_60%_nmotif_10_sw_20%_po2_40%", "n_600_wr_0.150%_po_100%_nmotif_10_sw_80%_po2_0%",
 #             "n_600_wr_0.150%_po_80%_nmotif_10_sw_80%_po2_20%", "n_600_wr_0.150%_po_60%_nmotif_10_sw_80%_po2_40%"]
-datasets = ["AIRR/development_data"]  #"n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
+datasets = ["AIRR"]  #"n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
 
 print("defined variables")
 
@@ -113,10 +114,15 @@ for datastet in datasets:
     #
     # Get dataset
     #
+    split_inds = list(range(760))
+    indices = [i*int((760-120)/5) for i in [1, 2, 3, 4, 5]]
+
+    split_inds = [split_inds[i:j] for i, j in zip([0] + indices, indices + [None])]
+
     # Get data loaders for training set and training-, validation-, and test-set in evaluation mode (=no random subsampling)
     trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
         task_definition=task_definition,
-        metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/development.csv",
+        metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/metadata.csv",
         metadata_file_column_sep=",",
         n_worker_processes=4,
         repertoiresdata_path=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/repertoires",
@@ -127,7 +133,9 @@ for datastet in datasets:
         sequence_labels_column='matched',
         sample_n_sequences=args.sample_n_sequences,
         sequence_counts_scaling_fn=no_sequence_count_scaling,
-        with_test=with_test
+        with_test=with_test,
+        split_inds=split_inds,
+        cross_validation_fold=5
         # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
     )
     dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval}

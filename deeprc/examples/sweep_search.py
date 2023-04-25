@@ -9,6 +9,7 @@ import wandb
 import os
 import datetime
 from deeprc.utils import Logger
+import dill as pkl
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--device_id', help='Index of the device. Default: 0.',
@@ -22,7 +23,7 @@ parser.add_argument('--n_kernels', help='Number of kernels in the 1D-CNN. This i
 
 args = parser.parse_args()
 device_name = f"cuda:{args.device_id}"
-with_test = False
+with_test = True
 device = torch.device(device_name)
 
 seeds = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
@@ -34,8 +35,8 @@ root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 # root_dir = "/fp/homes01/u01/ec-ghadia"
 # root_dir = "/cluster/work/projects/ec35/ec-ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
-strategies = ["TASTE"]  # "PDRC", "FG", "TE", "TASTER", , "T-SAFTE"]
-dataset = "AIRR/development_data"
+strategies = ["PDRC"]  # "TASTE", "FG", "TE", "TASTER", , "T-SAFTE"]
+dataset = "AIRR"
 # dataset = "test_data"
 
 # 2: Define the search space
@@ -57,7 +58,7 @@ config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.3,
           "dataset": dataset, "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "Emerson",
           "dataset_type": dataset_type, "log_training_stats_at": int(2e3), "sample_n_sequences": int(1e4),
-          "learning_rate": 1e-4, "n_updates": int(5e4), "evaluate_at": int(5e3),
+          "learning_rate": 1e-4, "n_updates": int(3e4), "evaluate_at": int(5e3),
           # "learning_rate": 1e-4, "n_updates": int(10), "evaluate_at": int(5),
           "n_kernels": params["n_kernels"][args.n_kernels], "kernel_size": params["kernel_size"][args.kernel_size]}
 
@@ -67,16 +68,25 @@ results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["ti
 task_definition = TaskDefinition(targets=[
     BinaryTarget(column_name='CMV', true_class_value='True', pos_weight=config["pos_weight_rep"]),
     Sequence_Target(pos_weight=config["pos_weight_seq"])]).to(device=device)
-#
+
+# split_file = os.path.join(root_dir, 'datasets', 'splits_used_in_paper', 'CMV_splits.pkl')
+# with open(split_file, 'rb') as sfh:
+#     split_inds = pkl.load(sfh)
+split_inds = list(range(760))
+indices = [i * int((760 - 120) / 5) for i in [1, 2, 3, 4, 5]]
+
+split_inds = [split_inds[i:j] for i, j in zip([0] + indices, indices + [None])]
+
 # Get data loaders for training set and training-, validation-, and test-set in evaluation mode (=no random subsampling)
 trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
     task_definition=task_definition,
-    metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/development.csv",
-    metadata_file_column_sep=",", n_worker_processes=2,
+    metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/metadata.csv",
+    metadata_file_column_sep=",", n_worker_processes=32,
     repertoiresdata_path=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/repertoires",
     metadata_file_id_column='filename', sequence_column='cdr3_aa', sequence_counts_column=None,
     sequence_pools_column='matched', sequence_labels_column='matched', sample_n_sequences=config["sample_n_sequences"],
-    sequence_counts_scaling_fn=no_sequence_count_scaling, with_test=with_test)
+    sequence_counts_scaling_fn=no_sequence_count_scaling, with_test=with_test, split_inds=split_inds,
+    cross_validation_fold=5)
 
 dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval}
 if with_test:
@@ -89,7 +99,7 @@ logger = Logger(dataloaders=dl_dict, with_FPs=False)
 # config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
 #                "plain_DeepRC": False})
 # # elif strategy == "PDRC":
-group = f"PDRC_n_up_{config['n_updates']}"
+group = f"PDRC_n_up_{config['n_updates']}_ReprAtmpt"
 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                "plain_DeepRC": True})
 
