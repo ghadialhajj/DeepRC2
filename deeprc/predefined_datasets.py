@@ -15,6 +15,19 @@ from deeprc.dataset_readers import make_dataloaders, no_sequence_count_scaling, 
 from deeprc.task_definitions import TaskDefinition, BinaryTarget
 
 
+def generate_indcs(num_reps: int = 683, num_test: int = 120, num_splits: int = 5):
+    original_list = list(range(num_reps - num_test))
+    total_elements = len(original_list)
+    elements_per_list = total_elements // num_splits  # Integer division to get the base number of elements per list
+    remainder = total_elements % num_splits  # Get the remainder elements
+    lists = [
+        original_list[i * elements_per_list + min(i, remainder):(i + 1) * elements_per_list + min(i + 1, remainder)] for
+        i in range(num_splits)]
+    test_indcs = list(range(num_reps - num_test, num_reps))
+    lists.append(test_indcs)
+    return lists
+
+
 def simulated_dataset(dataset_path: str = None, dataset_id: int = 0, task_definition: TaskDefinition = None,
                       cross_validation_fold: int = 0, n_worker_processes: int = 4, batch_size: int = 4,
                       inputformat: str = 'NCL', keep_dataset_in_ram: bool = True,
@@ -365,26 +378,28 @@ def cmv_dataset(dataset_path: str = None, task_definition: TaskDefinition = None
     if dataset_path is None:
         dataset_path = os.path.join(os.path.dirname(deeprc.__file__), 'datasets', f'CMV')
     os.makedirs(dataset_path, exist_ok=True)
-    metadata_file = os.path.join(dataset_path, f'CMV_metadata.tsv')
-    repertoiresdata_file = os.path.join(dataset_path, f'CMV_repertoiresdata.hdf5')
-    
+    # metadata_file = os.path.join(dataset_path, f'CMV_metadata.tsv')
+    # repertoiresdata_file = os.path.join(dataset_path, f'CMV_repertoiresdata.hdf5')
+    metadata_file = os.path.join(dataset_path, f'metadata.csv')
+    repertoiresdata_file = os.path.join(dataset_path, f'repertoires.hdf5')
+
     # Download metadata file
     if not os.path.exists(metadata_file):
-        user_confirmation(f"File {metadata_file} not found. It will be downloaded now. Continue?", 'y', 'n')
+        # user_confirmation(f"File {metadata_file} not found. It will be downloaded now. Continue?", 'y', 'n')
         url_get(f"https://ml.jku.at/research/DeepRC/datasets/CMV_data/metadata/cmv_emerson_2017.tsv",
                 metadata_file)
     
     # Download repertoire file
     if not os.path.exists(repertoiresdata_file):
-        user_confirmation(f"File {repertoiresdata_file} not found. It will be downloaded now. Continue?", 'y', 'n')
+        # user_confirmation(f"File {repertoiresdata_file} not found. It will be downloaded now. Continue?", 'y', 'n')
         url_get(f"https://ml.jku.at/research/DeepRC/datasets/CMV_data/hdf5/cmv_emerson_2017.hdf5",
                 repertoiresdata_file)
     
-    # Get file for dataset splits
-    split_file = os.path.join(os.path.dirname(deeprc.__file__), 'datasets', 'splits_used_in_paper', 'CMV_splits.pkl')
-    with open(split_file, 'rb') as sfh:
-        split_inds = pkl.load(sfh)
-    
+    # # Get file for dataset splits
+    # split_file = os.path.join(os.path.dirname(deeprc.__file__), 'datasets', 'splits_used_in_paper', 'CMV_splits.pkl')
+    # with open(split_file, 'rb') as sfh:
+    #     split_inds = pkl.load(sfh)
+    split_inds = generate_indcs()
     # Get task_definition
     if task_definition is None:
         task_definition = TaskDefinition(targets=[BinaryTarget(column_name='Known CMV status', true_class_value='+')])
@@ -392,10 +407,10 @@ def cmv_dataset(dataset_path: str = None, task_definition: TaskDefinition = None
     # Create data loaders
     trainingset_dataloader, trainingset_eval_dataloader, validationset_eval_dataloader, testset_eval_dataloader = \
         make_dataloaders(task_definition=task_definition, metadata_file=metadata_file,
-                         repertoiresdata_path=repertoiresdata_file, split_inds=split_inds,
+                         repertoiresdata_path=repertoiresdata_file[:-5], split_inds=split_inds,
                          cross_validation_fold=cross_validation_fold, n_worker_processes=n_worker_processes,
                          batch_size=batch_size, inputformat=inputformat, keep_dataset_in_ram=keep_dataset_in_ram,
                          sample_n_sequences=sample_n_sequences, sequence_counts_scaling_fn=log_sequence_count_scaling,
-                         metadata_file_id_column='Subject ID', verbose=verbose)
+                         metadata_file_id_column='subject_id', metadata_file_column_sep=",", verbose=verbose)
     return (task_definition, trainingset_dataloader, trainingset_eval_dataloader, validationset_eval_dataloader,
             testset_eval_dataloader)
