@@ -155,6 +155,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
     #
     try:
         with h5py.File(f"{repertoiresdata_path}.hdf5", 'r') as hf:
+            print(f"This is the day we fight {repertoiresdata_path}.hdf5")
             n_repertoires = hf['metadata']['n_samples'][()]
         hdf5_file = f"{repertoiresdata_path}.hdf5"
     except Exception:
@@ -214,8 +215,8 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
     if cross_validation_fold >= len(split_inds):
         raise ValueError(f"Demanded `cross_validation_fold` {cross_validation_fold} but only {len(split_inds)} splits "
                          f"exist in `split_inds`.")
-    if with_test:
-        testset_inds = split_inds.pop(cross_validation_fold)
+    # if with_test:
+    testset_inds = split_inds.pop(cross_validation_fold)
     validationset_inds = split_inds.pop(cross_validation_fold - 1)
     trainingset_inds = np.concatenate(split_inds)
 

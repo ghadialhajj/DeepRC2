@@ -14,6 +14,8 @@ import dill as pkl
 parser = argparse.ArgumentParser()
 parser.add_argument('--device_id', help='Index of the device. Default: 0.',
                     type=int, default=0)
+parser.add_argument('--run_id', help='Index of the run. Default: 0.',
+                    type=int, default=0)
 parser.add_argument('--kernel_size', help='Size of 1D-CNN kernels (=how many sequence characters a CNN kernel spans).'
                                           'Default: 9',
                     type=int, default=0)
@@ -29,9 +31,9 @@ device = torch.device(device_name)
 seeds = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 # root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
-# root_dir = "/storage/ghadia/DeepRC2/deeprc"
+root_dir = "/storage/ghadia/DeepRC2/deeprc"
 dataset_type = "emerson"
-root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
+# root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 # root_dir = "/fp/homes01/u01/ec-ghadia"
 # root_dir = "/cluster/work/projects/ec35/ec-ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
@@ -40,27 +42,29 @@ dataset = "AIRR"
 # dataset = "test_data"
 
 # 2: Define the search space
-# sweep_configuration = {
-#     'method': 'grid',
-#     'metric': {'goal': 'maximize', 'name': 'max_auc_score'},
-#     'parameters':
-#         {
-#             'n_kernels': {'values': [8, 16, 32, 64]},
-#             'kernel_size': {'values': [5, 7, 9]},
-#         }
-# }
+sweep_configuration = {
+    'method': 'grid',
+    'metric': {'goal': 'maximize', 'name': 'max_auc_score'},
+    'parameters':
+        {
+            # 'n_kernels': {'values': [8, 16, 32, 64]},
+            # 'kernel_size': {'values': [5, 7, 9]},
+            'n_kernels': {'values': [32]},
+            'kernel_size': {'values': [9]},
+        }
+}
 
 
-params = {'kernel_size': [5, 7, 9],
-          'n_kernels': [8, 16, 32, 64]}
+# params = {'kernel_size': [5, 7, 9],
+#           'n_kernels': [8, 16, 32, 64]}
 
 config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.3,
           "dataset": dataset, "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "Emerson",
           "dataset_type": dataset_type, "log_training_stats_at": int(2e3), "sample_n_sequences": int(1e4),
-          "learning_rate": 1e-4, "n_updates": int(3e4), "evaluate_at": int(5e3),
+          "learning_rate": 1e-4, "n_updates": int(1e5), "evaluate_at": int(5e3)}#,
           # "learning_rate": 1e-4, "n_updates": int(10), "evaluate_at": int(5),
-          "n_kernels": params["n_kernels"][args.n_kernels], "kernel_size": params["kernel_size"][args.kernel_size]}
+          # "n_kernels": sweep_configuration["parameters"]["n_kernels"][args.n_kernels], "kernel_size": sweep_configuration["parameters"]["kernel_size"][args.kernel_size]}
 
 # Append current timestamp to results directory
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
@@ -81,7 +85,7 @@ split_inds = [split_inds[i:j] for i, j in zip([0] + indices, indices + [None])]
 trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
     task_definition=task_definition,
     metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/metadata.csv",
-    metadata_file_column_sep=",", n_worker_processes=32,
+    metadata_file_column_sep=",", n_worker_processes=4,
     repertoiresdata_path=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/repertoires",
     metadata_file_id_column='filename', sequence_column='cdr3_aa', sequence_counts_column=None,
     sequence_pools_column='matched', sequence_labels_column='matched', sample_n_sequences=config["sample_n_sequences"],
@@ -94,26 +98,29 @@ if with_test:
 
 logger = Logger(dataloaders=dl_dict, with_FPs=False)
 
-# sweep_id = wandb.sweep(sweep=sweep_configuration, project='Emerson_TE')
+sweep_id = wandb.sweep(sweep=sweep_configuration, project='Emerson_TE_Cor_Spl')
 
-
+# group = f"TE_n_up_{config['n_updates']}"
 # config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
 #                "plain_DeepRC": False})
+group = f"TASTE_n_up_{config['n_updates']}"
+config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
+               "plain_DeepRC": False})
 # elif strategy == "PDRC":
-group = f"PDRC_n_up_{config['n_updates']}"
-config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-               "plain_DeepRC": True})
+# group = f"PDRC_n_up_{config['n_updates']}"
+# config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
+#                "plain_DeepRC": True})
 
 print("Dataloaders with lengths: ",
       ", ".join([f"{str(name)}: {len(loader)}" for name, loader in dl_dict.items()]))
 
 
-def main(idx):
-    run = wandb.init(reinit=True, project="Emerson_TE_Cor_Spl")
-    run.name = f"results_idx_{str(idx)}"
+def main():
+    run = wandb.init(reinit=True, project="Emerson_TE_Cor_Spl", group=group)
+    run.name = f"results_idx_{str(args.run_id)}"
     wandb.config.update(config)
-    torch.manual_seed(seeds[idx])
-    np.random.seed(seeds[idx])
+    torch.manual_seed(seeds[args.run_id])
+    np.random.seed(seeds[args.run_id])
 
     sequence_embedding_network = SequenceEmbeddingCNN(n_input_features=20 + 3, kernel_size=wandb.config.kernel_size,
                                                       n_kernels=wandb.config.n_kernels, n_layers=1)
@@ -148,7 +155,7 @@ def main(idx):
 
 
 # # Start sweep job.
-# wandb.agent(sweep_id, function=main)
+wandb.agent(sweep_id, function=main)
 
-for idx in range(3):
-    main(idx)
+# for idx in range(3):
+#     main(idx)

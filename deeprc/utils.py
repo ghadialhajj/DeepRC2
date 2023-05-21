@@ -59,7 +59,7 @@ def url_get(url: str, dst: str, verbose: bool = True):
     src = stream.raw
     windows = os.name == 'nt'
     copy_bufsize = 1024 * 1024 if windows else 64 * 1024
-    update_progess_bar = tqdm.tqdm(total=stream_size, disable=not verbose,
+    update_progess_bar = tqdm(total=stream_size, disable=not verbose,
                                    desc=f"Downloading {stream_size * 1e-9:0.3f}GB dataset")
     with open(dst, 'wb') as out_file:
         while True:
