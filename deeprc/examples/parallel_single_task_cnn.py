@@ -55,7 +55,7 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:0"  # + str(int((args.ideal + args.idx)%2))
+device_name = "cuda:1"  # + str(int((args.ideal + args.idx)%2))
 with_test = True
 device = torch.device(device_name)
 
@@ -71,7 +71,7 @@ dataset_type = "emerson_linz"
 base_results_dir = "/results/singletask_cnn/ideal"
 # , "tag": ["AdHoc1.3.1"]}
 # n_20_op_1_po_0.100%25_pu_0
-strategies = ["PDRC", "TASTE", "FG", "TE"]  #  , "TASTER", "T-SAFTE"]
+strategies = ["PDRC", "TE", "TASTE", "FG"]  #  , "TASTER", "T-SAFTE"]
 datasets = ["AIRR"]  # "n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
 
 print("defined variables")
@@ -82,14 +82,18 @@ print("defined variables")
 # T-SAFTE: Train Sequence Embedding and Attention networks first, then Freeze the first part and Train Everything
 # FG: Forced Guidance: attention is provided rather than learned (regardless of label trueness)
 
-def generate_indcs(num_reps: int = 683, num_test: int = 120, num_splits: int = 4):
+def generate_indcs(num_reps: int = 686, num_test: int = 120, num_splits: int = 4, n_pops: int = 2):
+    np.random.seed(0)
     original_list = list(range(num_reps - num_test))
+    np.random.shuffle(original_list)
     total_elements = len(original_list)
     elements_per_list = total_elements // num_splits  # Integer division to get the base number of elements per list
     remainder = total_elements % num_splits  # Get the remainder elements
     lists = [
         original_list[i * elements_per_list + min(i, remainder):(i + 1) * elements_per_list + min(i + 1, remainder)] for
         i in range(num_splits)]
+    for _ in range(n_pops):
+        lists.pop(-1)
     test_indcs = list(range(num_reps - num_test, num_reps))
     lists.append(test_indcs)
     return lists
@@ -97,7 +101,6 @@ def generate_indcs(num_reps: int = 683, num_test: int = 120, num_splits: int = 4
 
 if __name__ == '__main__':
     for datastet in datasets:
-        print(datastet)
         config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
                   "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.3,
                   "dataset": datastet, "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "Emerson",
@@ -122,7 +125,7 @@ if __name__ == '__main__':
         #
         # Get dataset
         #
-        split_inds = generate_indcs(683, 120, 4)
+        split_inds = generate_indcs(686, 120, 5, 2)
 
         # split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_splits.pkl"
         # with open(split_file, 'rb') as sfh:
@@ -145,7 +148,7 @@ if __name__ == '__main__':
             sequence_counts_scaling_fn=log_sequence_count_scaling,
             with_test=with_test,
             split_inds=split_inds,
-            cross_validation_fold=4,
+            cross_validation_fold=3,
             # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
         )
         dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval}
@@ -187,13 +190,9 @@ if __name__ == '__main__':
             torch.manual_seed(seeds[args.idx])
             np.random.seed(seeds[args.idx])
 
-            run = wandb.init(project="Emerson_Linz_correct_split", group=f"{group}_verify",
+            run = wandb.init(project="Emerson_Linz_correct_split", group=f"{group}_2×pop_shuf_0",
                              reinit=True)  # , tags=config["tag"])
             run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
-            # DeepRC_PlainW_StanData, Explore_wFPs
-            # if args.idx == 0:
-            #     df_dict = get_sample_reps()
-            #     log_reps(df_dict)
 
             wandb.config.update(args)
             wandb.config.update(config)
