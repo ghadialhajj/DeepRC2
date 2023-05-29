@@ -8,7 +8,7 @@ Contact -- widrich@ml.jku.at
 """
 # todo: add key-query comparisons
 import argparse
-
+import dill as pkl
 import numpy as np
 import pandas as pd
 import torch
@@ -56,7 +56,7 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 args = parser.parse_args()
 # Set computation device
 device_name = "cuda:0"  # + str(int((args.ideal + args.idx)%2))
-with_test = False
+with_test = True
 device = torch.device(device_name)
 
 seeds = [92, 9241, 5149, 41, 720, 813, 485, 85, 74]
@@ -64,15 +64,15 @@ seeds = [92, 9241, 5149, 41, 720, 813, 485, 85, 74]
 # root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
 # root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
-dataset_type = "emerson"
+dataset_type = "emerson_linz"
 # root_dir = "/itf-fi-ml/shared/users/ghadia/deeprc"
 # root_dir = "/fp/homes01/u01/ec-ghadia/DeepRC2/deeprc"
 # root_dir = "/cluster/work/projects/ec35/ec-ghadia/"
 base_results_dir = "/results/singletask_cnn/ideal"
 # , "tag": ["AdHoc1.3.1"]}
 # n_20_op_1_po_0.100%25_pu_0
-strategies = ["PDRC", "TASTE", "FG", "TE"]  # , "TASTER", "T-SAFTE"]
-datasets = ["oldAIRR"]  # "n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
+strategies = ["PDRC", "TASTE", "FG", "TE"]  #  , "TASTER", "T-SAFTE"]
+datasets = ["AIRR"]  # "n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
 
 print("defined variables")
 
@@ -82,7 +82,7 @@ print("defined variables")
 # T-SAFTE: Train Sequence Embedding and Attention networks first, then Freeze the first part and Train Everything
 # FG: Forced Guidance: attention is provided rather than learned (regardless of label trueness)
 
-def generate_indcs(num_reps: int = 683, num_test: int = 120, num_splits: int = 5):
+def generate_indcs(num_reps: int = 683, num_test: int = 120, num_splits: int = 4):
     original_list = list(range(num_reps - num_test))
     total_elements = len(original_list)
     elements_per_list = total_elements // num_splits  # Integer division to get the base number of elements per list
@@ -112,7 +112,8 @@ if __name__ == '__main__':
         task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
             BinaryTarget(  # Add binary classification task with sigmoid output function
                 column_name='CMV',  # Column name of task in metadata file
-                true_class_value='True',  # Entries with value 'True' will be positive class, others will be negative class
+                true_class_value='+',
+                # Entries with value 'True' will be positive class, others will be negative class
                 pos_weight=config["pos_weight_rep"],
                 # We can up- or down-weight the positive class if the classes are imbalanced
             ),
@@ -121,7 +122,11 @@ if __name__ == '__main__':
         #
         # Get dataset
         #
-        split_inds = generate_indcs(683, 120, 5)
+        split_inds = generate_indcs(683, 120, 4)
+
+        # split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_splits.pkl"
+        # with open(split_file, 'rb') as sfh:
+        #     split_inds = pkl.load(sfh)
 
         # Get data loaders for training set and training-, validation-, and test-set in evaluation mode (=no random subsampling)
         trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
@@ -140,7 +145,7 @@ if __name__ == '__main__':
             sequence_counts_scaling_fn=log_sequence_count_scaling,
             with_test=with_test,
             split_inds=split_inds,
-            cross_validation_fold=5
+            cross_validation_fold=4,
             # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
         )
         dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval}
@@ -168,7 +173,7 @@ if __name__ == '__main__':
                 config.update({"train_then_freeze": True, "staged_training": True, "forced_attention": False,
                                "plain_DeepRC": False})
             elif strategy == "FG":
-                group = f"FG_n_up_{args.n_updates}_pw_{config['pos_weight_seq']}"
+                group = f"FG_n_up_{args.n_updates}"
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": True,
                                "plain_DeepRC": True})
             elif strategy == "PDRC":
@@ -182,7 +187,7 @@ if __name__ == '__main__':
             torch.manual_seed(seeds[args.idx])
             np.random.seed(seeds[args.idx])
 
-            run = wandb.init(project="oldEmerson_consider_counts_log", group=f"{group}",
+            run = wandb.init(project="Emerson_Linz_correct_split", group=f"{group}_verify",
                              reinit=True)  # , tags=config["tag"])
             run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
             # DeepRC_PlainW_StanData, Explore_wFPs
@@ -226,7 +231,8 @@ if __name__ == '__main__':
                   validationset_eval_dataloader=validationset_eval, logger=logger, n_updates=args.n_updates,
                   evaluate_at=args.evaluate_at, device=device, results_directory=f"{root_dir}{results_dir}",
                   prop=config["prop"],
-                  log_training_stats_at=args.log_training_stats_at,  # Here our results and trained models will be stored
+                  log_training_stats_at=args.log_training_stats_at,
+                  # Here our results and trained models will be stored
                   train_then_freeze=config["train_then_freeze"], staged_training=config["staged_training"],
                   plain_DeepRC=config["plain_DeepRC"], log=False)
 
@@ -236,7 +242,8 @@ if __name__ == '__main__':
             # Evaluate trained model on testset
             #
             if with_test:
-                scores, sequence_scores = evaluate(model=model, dataloader=testset_eval, task_definition=task_definition,
+                scores, sequence_scores = evaluate(model=model, dataloader=testset_eval,
+                                                   task_definition=task_definition,
                                                    device=device)
                 wandb.run.summary.update(scores["CMV"])
                 wandb.run.summary.update(sequence_scores["sequence_class"])
