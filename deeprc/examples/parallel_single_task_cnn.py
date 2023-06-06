@@ -31,7 +31,7 @@ parser.add_argument('--n_updates', help='Number of updates to train for. Recomme
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(5e3))
+                    type=int, default=int(2e3))
 # type=int, default=int(10))
 parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
                                                     'Recommended: int(5e3). Default: int(1e2).',
@@ -55,8 +55,8 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:1"  # + str(int((args.ideal + args.idx)%2))
-with_test = True
+device_name = "cuda:0"  # + str(int((args.ideal + args.idx)%2))
+with_test = False
 device = torch.device(device_name)
 
 seeds = [92, 9241, 5149, 41, 720, 813, 485, 85, 74]
@@ -71,7 +71,7 @@ dataset_type = "emerson_linz"
 base_results_dir = "/results/singletask_cnn/ideal"
 # , "tag": ["AdHoc1.3.1"]}
 # n_20_op_1_po_0.100%25_pu_0
-strategies = ["PDRC", "TE", "TASTE", "FG"]  #  , "TASTER", "T-SAFTE"]
+strategies = ["TE"]  # ,"PDRC", "TASTE" , , "FG", "TASTER", "T-SAFTE"]
 datasets = ["AIRR"]  # "n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
 
 print("defined variables")
@@ -99,10 +99,53 @@ def generate_indcs(num_reps: int = 686, num_test: int = 120, num_splits: int = 4
     return lists
 
 
+def generate_indcs_subsets(num_test: int = 120, num_train: int = 50, num_val: int = 50):
+    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_splits.pkl"
+    with open(split_file, 'rb') as sfh:
+        split_inds = pkl.load(sfh)
+    split_inds = [item for sublist in split_inds for item in sublist]
+    split_inds.sort()
+    test_inds = split_inds[-num_test:]
+    rem_ids = split_inds[:-num_test]
+    np.random.seed(0)
+    np.random.shuffle(rem_ids)
+    train_inds = rem_ids[:num_train]
+    val_inds = rem_ids[num_train:num_train+num_val]
+    lists = [train_inds, val_inds, test_inds]
+    return lists
+
+
+def split_idcs(num_splits=4, n_pops=9):
+    """
+    This returns the indices of the repertoires that don't have missing template column in the original repertoires.
+    These repertoires are also found in the AIRR_w_counts_only folder, and the corresponding hdf5 file.
+
+    :parameter num_splits: number of splits for the training and validation sets. The test set is chosen from the
+    second cohort in the Emerson dataset, and placed at the last index of the returned list.
+    """
+    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/emerson/AIRR/new_emerson_inds.pkl"
+    with open(split_file, 'rb') as sfh:
+        split_inds = pkl.load(sfh)
+    test_inds = split_inds[-120:]
+    rem_ids = split_inds[:-120]
+    np.random.seed(0)
+    np.random.shuffle(rem_ids)
+    total_elements = len(rem_ids)
+    elements_per_list = total_elements // num_splits  # Integer division to get the base number of elements per list
+    remainder = total_elements % num_splits  # Get the remainder elements
+    lists = [
+        rem_ids[i * elements_per_list + min(i, remainder):(i + 1) * elements_per_list + min(i + 1, remainder)] for
+        i in range(num_splits)]
+    for _ in range(n_pops):
+        lists.pop(-1)
+    lists.append(test_inds)
+    return lists
+
+
 if __name__ == '__main__':
     for datastet in datasets:
         config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
-                  "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.3,
+                  "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.5,
                   "dataset": datastet, "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "Emerson",
                   "dataset_type": dataset_type}
         # Append current timestamp to results directory
@@ -125,7 +168,9 @@ if __name__ == '__main__':
         #
         # Get dataset
         #
-        split_inds = generate_indcs(686, 120, 5, 2)
+        # split_inds = generate_indcs(686, 120, 5, 2)
+        # split_inds = generate_indcs(146, 1, 4, 0)
+        split_inds = generate_indcs_subsets(num_train=100, num_val=100)
 
         # split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_splits.pkl"
         # with open(split_file, 'rb') as sfh:
@@ -141,15 +186,12 @@ if __name__ == '__main__':
             metadata_file_id_column='filename',
             sequence_column='cdr3_aa',
             sequence_counts_column="duplicate_count",
-            sequence_pools_column='matched',
             sequence_labels_column='matched',
             sample_n_sequences=args.sample_n_sequences,
-            # sequence_counts_scaling_fn=no_sequence_count_scaling,
             sequence_counts_scaling_fn=log_sequence_count_scaling,
             with_test=with_test,
             split_inds=split_inds,
-            cross_validation_fold=3,
-            # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
+            cross_validation_fold=2,
         )
         dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval}
         if with_test:
@@ -190,7 +232,7 @@ if __name__ == '__main__':
             torch.manual_seed(seeds[args.idx])
             np.random.seed(seeds[args.idx])
 
-            run = wandb.init(project="Emerson_Linz_correct_split", group=f"{group}_2×pop_shuf_0",
+            run = wandb.init(project="Emerson_Linz_correct_split_loss_weighting", group=f"{group}_100t_100v",
                              reinit=True)  # , tags=config["tag"])
             run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
 

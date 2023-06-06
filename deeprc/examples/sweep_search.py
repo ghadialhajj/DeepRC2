@@ -32,12 +32,12 @@ seeds = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 # root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
-dataset_type = "emerson"
+dataset_type = "emerson_linz"
 # root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 # root_dir = "/fp/homes01/u01/ec-ghadia"
 # root_dir = "/cluster/work/projects/ec35/ec-ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
-strategies = ["PDRC"]  #, "TE" "TASTE", "FG", "TASTER", , "T-SAFTE"]
+strategies = ["TE"]  #"PDRC",  "TASTE", "FG", "TASTER", , "T-SAFTE"]
 dataset = "AIRR"
 # dataset = "test_data"
 

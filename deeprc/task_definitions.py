@@ -10,6 +10,7 @@ import pandas as pd
 from typing import List, Union
 import torch
 from sklearn import metrics
+import torch.nn.functional as F
 
 
 class Sequence_Loss(torch.nn.Module):
@@ -141,7 +142,7 @@ class Target(torch.nn.Module):
         return dict(loss=self.loss_function(raw_outputs=raw_outputs, targets=targets).detach().mean().cpu().item())
 
 
-class Sequence_Target(Target):
+class Sequence_Target(torch.nn.Module):
     def __init__(self, target_id: str = 'sequence_class', pos_weight: int = 999):
         """Creates a sequence classification target, i.e. initially, only the direction is provided.
 
@@ -167,10 +168,14 @@ class Sequence_Target(Target):
         pos_weight: float
              Not used
         """
-        super().__init__(target_id=target_id, n_output_features=1)
+        super().__init__()
+        self.__target_id__ = target_id
+        self.__n_output_features__ = 1
+        self.pos_weight = torch.tensor(pos_weight)
+        self.reduction = "mean"
         self.target_loss = Sequence_Loss()
-        self.binary_cross_entropy_loss = torch.nn.BCEWithLogitsLoss(reduction='mean',
-                                                                    pos_weight=torch.tensor(pos_weight))
+        # self.binary_cross_entropy_loss = torch.nn.BCEWithLogitsLoss(reduction='mean',
+        #                                                             pos_weight=torch.tensor(pos_weight))
 
     def get_targets(self, dataframe: pd.DataFrame) -> np.ndarray:
         pass
@@ -192,7 +197,8 @@ class Sequence_Target(Target):
         """
         return torch.sigmoid(raw_outputs)
 
-    def loss_function(self, raw_outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    def loss_function(self, raw_outputs: torch.Tensor, targets: torch.Tensor,
+                      sequence_counts: torch.Tensor) -> torch.Tensor:
         """Custom loss used for training on this task
 
         Parameters
@@ -210,9 +216,10 @@ class Sequence_Target(Target):
             Loss for this task as torch.Tensor of shape `(n_instances, 1)`.
         """
         # return self.target_loss(raw_outputs, targets)
-        return self.binary_cross_entropy_loss(raw_outputs, targets)
+        return F.binary_cross_entropy_with_logits(raw_outputs, targets, weight=sequence_counts,
+                                                  pos_weight=self.pos_weight, reduction=self.reduction)
 
-    def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor) -> dict:
+    def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor, sequence_counts: torch.Tensor) -> dict:
         """Get scores for this task as dictionary containing AUC, BACC, F1, and loss
 
         Parameters
@@ -243,9 +250,14 @@ class Sequence_Target(Target):
             roc_auc = 0.5
         bacc = metrics.balanced_accuracy_score(y_true=labels, y_pred=predictions_thresholded)
         f1 = metrics.f1_score(y_true=labels, y_pred=predictions_thresholded, average='binary', pos_label=1)
-        loss = self.loss_function(raw_outputs=raw_outputs, targets=targets).detach().mean().cpu().item()
+        loss = self.loss_function(raw_outputs=raw_outputs, targets=targets,
+                                  sequence_counts=sequence_counts).detach().mean().cpu().item()
         return dict(pr_auc=pr_auc, seq_roc_auc=roc_auc, seq_bacc=bacc, seq_f1=f1, seq_loss=loss,
                     seq_avg_score_diff=avg_score_diff)
+
+    def get_id(self) -> str:
+        """Get target ID as string"""
+        return self.__target_id__
 
 
 class BinaryTarget(Target):
@@ -676,8 +688,9 @@ class TaskDefinition(torch.nn.Module):
         return losses
 
     # Expand to multiple sequence targets, if needed
-    def get_sequence_loss(self, raw_attention: torch.Tensor, seq_labels: torch.Tensor):
-        return self.__sequence_targets__[0].loss_function(raw_outputs=raw_attention, targets=seq_labels)
+    def get_sequence_loss(self, raw_attention: torch.Tensor, seq_labels: torch.Tensor, seq_counts: torch.Tensor):
+        return self.__sequence_targets__[0].loss_function(raw_outputs=raw_attention, targets=seq_labels,
+                                                          sequence_counts=seq_counts)
 
     def get_loss(self, raw_outputs: torch.Tensor, targets: torch.Tensor, ignore_missing_target_values: bool = True) \
             -> torch.Tensor:
@@ -757,7 +770,8 @@ class TaskDefinition(torch.nn.Module):
                        for s, t in zip(self.__targets_slices__, self.__repertoire_targets__)])
         return scores
 
-    def get_sequence_scores(self, raw_attentions: torch.Tensor, sequence_targets: torch.Tensor) -> dict:
+    def get_sequence_scores(self, raw_attentions: torch.Tensor, sequence_targets: torch.Tensor,
+                            sequence_counts: torch.Tensor) -> dict:
         """Get scores for this task as dictionary
 
         Parameters
@@ -778,6 +792,6 @@ class TaskDefinition(torch.nn.Module):
             `deeprc.task_definitions.BinaryTarget()`).
             See `deeprc/examples/` for examples.
         """
-        scores = dict([(t.get_id(), t.get_scores(raw_outputs=raw_attentions, targets=sequence_targets))
-                       for t in self.__sequence_targets__])
+        scores = dict([(t.get_id(), t.get_scores(raw_outputs=raw_attentions, targets=sequence_targets,
+                                                 sequence_counts=sequence_counts)) for t in self.__sequence_targets__])
         return scores

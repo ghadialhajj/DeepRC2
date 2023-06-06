@@ -60,7 +60,7 @@ def url_get(url: str, dst: str, verbose: bool = True):
     windows = os.name == 'nt'
     copy_bufsize = 1024 * 1024 if windows else 64 * 1024
     update_progess_bar = tqdm(total=stream_size, disable=not verbose,
-                                   desc=f"Downloading {stream_size * 1e-9:0.3f}GB dataset")
+                              desc=f"Downloading {stream_size * 1e-9:0.3f}GB dataset")
     with open(dst, 'wb') as out_file:
         while True:
             buf = src.read(copy_bufsize)
@@ -144,12 +144,13 @@ class Logger():
         scores: dict
             Nested dictionary of format `{task_id: {score_id: score_value}}`, e.g.
         """
-        all_logits, all_targets, all_attentions, all_seq_targets, all_seq_pools, all_emb_reps = get_outputs(model=model,
-                                                                                                            dataloader=dataloader,
-                                                                                                            device=device,
-                                                                                                            show_progress=show_progress)
+        all_logits, all_targets, all_attentions, all_seq_targets, all_seq_counts, all_emb_reps = get_outputs(
+            model=model,
+            dataloader=dataloader,
+            device=device,
+            show_progress=show_progress)
         split_logits = self.split_outputs(all_logits, all_targets)
-        split_attentions = self.split_outputs(all_attentions, all_seq_pools, sequence_level=True)
+        split_attentions = self.split_outputs(all_attentions, all_seq_targets, sequence_level=True)
         split_rep_embs = self.split_outputs(all_emb_reps, all_targets, flatten=False)
         return split_logits, split_attentions, split_rep_embs
 
@@ -241,14 +242,14 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
         all_targets = []
         all_attentions = []
         all_seq_targets = []
-        all_seq_pools = []
+        all_seq_counts = []
         for scoring_data in tqdm(dataloader, total=len(dataloader), desc="Evaluating model", disable=not show_progress):
             # Get samples as lists
-            targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence, sample_ids = scoring_data
+            targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, sample_ids = scoring_data
 
             # Apply attention-based sequence reduction and create minibatch
-            targets, inputs, sequence_lengths, sequence_labels, sequence_pools, n_sequences = model.reduce_and_stack_minibatch(
-                targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence)
+            targets, inputs, sequence_lengths, sequence_counts, sequence_labels, n_sequences = model.reduce_and_stack_minibatch(
+                targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence)
 
             # Compute predictions from reduced sequences
             raw_outputs, attention_outputs, emb_reps_after_attention = model(inputs_flat=inputs,
@@ -260,18 +261,18 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
             all_logits.append(raw_outputs.detach())
             all_emb_reps.append(emb_reps_after_attention.detach())
             all_targets.append(targets.detach())
+            all_seq_counts.append(sequence_counts.detach())
             all_attentions.append(attention_outputs.detach())
             all_seq_targets.append(sequence_labels.detach())
-            all_seq_pools.append(sequence_pools.detach())
         # Compute scores
         all_logits = torch.cat(all_logits, dim=0)
         all_emb_reps = torch.cat(all_emb_reps, dim=0)
         all_targets = torch.cat(all_targets, dim=0)
+        all_seq_counts = torch.cat(all_seq_counts, dim=0)
         all_attentions = torch.cat(all_attentions, dim=0)
         all_seq_targets = torch.cat(all_seq_targets, dim=0)
-        all_seq_pools = torch.cat(all_seq_pools, dim=0)
 
-    return all_logits, all_targets, all_attentions, all_seq_targets, all_seq_pools, all_emb_reps
+    return all_logits, all_targets, all_attentions, all_seq_targets, all_seq_counts, all_emb_reps
 
 
 def perform_pca(split_rep_embs):
