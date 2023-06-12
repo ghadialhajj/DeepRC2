@@ -71,7 +71,7 @@ dataset_type = "emerson_linz"
 base_results_dir = "/results/singletask_cnn/ideal"
 # , "tag": ["AdHoc1.3.1"]}
 # n_20_op_1_po_0.100%25_pu_0
-strategies = ["TE"]  # ,"PDRC", "TASTE" , , "FG", "TASTER", "T-SAFTE"]
+strategies = ["TE", "PDRC", "TASTE"]  #  , , "FG", "TASTER", "T-SAFTE"]
 datasets = ["AIRR"]  # "n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
 
 print("defined variables")
@@ -145,7 +145,7 @@ def split_idcs(num_splits=4, n_pops=9):
 if __name__ == '__main__':
     for datastet in datasets:
         config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
-                  "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.5,
+                  "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.3,
                   "dataset": datastet, "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "Emerson",
                   "dataset_type": dataset_type}
         # Append current timestamp to results directory
@@ -232,7 +232,7 @@ if __name__ == '__main__':
             torch.manual_seed(seeds[args.idx])
             np.random.seed(seeds[args.idx])
 
-            run = wandb.init(project="Emerson_Linz_correct_split_loss_weighting", group=f"{group}_100t_100v",
+            run = wandb.init(project="Emerson_Linz_correct_split_loss_weighting", group=f"{group}_100t_100v_w_pos_sam",
                              reinit=True)  # , tags=config["tag"])
             run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
 
