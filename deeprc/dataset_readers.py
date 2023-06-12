@@ -428,11 +428,22 @@ class RepertoireDataset(Dataset):
             Label per sequence in repertoire.
         """
         sample_sequences_start_end = self.sample_sequences_start_end[idx]
+
+        with h5py.File(self.filepath, 'r') as hf:
+            if self.sampledata is not None:
+                sampledata = self.sampledata
+            else:
+                sampledata = hf['sampledata']
+        pos_seq_inds = np.nonzero(
+            sampledata['sequence_labels'][sample_sequences_start_end[0]:sample_sequences_start_end[1]])[0]
         if sample_n_sequences:
             rnd_gen = np.random.RandomState()  # TODO: Add shared memory integer random seed for dropout
             sample_sequence_inds = np.unique(rnd_gen.randint(
                 low=sample_sequences_start_end[0], high=sample_sequences_start_end[1],
                 size=sample_n_sequences))
+            old_size = len(sample_sequence_inds)
+            sample_sequence_inds = list(set(sample_sequence_inds).union(pos_seq_inds))
+            assert len(sample_sequence_inds) >= old_size
             if self.sampledata is None:
                 # Compatibility for indexing hdf5 file
                 sample_sequence_inds = list(sample_sequence_inds)
