@@ -217,7 +217,7 @@ class Sequence_Target(torch.nn.Module):
         """
         # return self.target_loss(raw_outputs, targets)
         # TODO: optimize dtypes for minimal memory requirements
-        sequence_counts = torch.exp(sequence_counts).floor()
+        sequence_counts = torch.exp(sequence_counts).float()
         normalised_sequence_counts = sequence_counts / sum(sequence_counts)
         num_pos = torch.dot(targets.float(), sequence_counts)
         num_neg = torch.dot(1 - targets.float(), sequence_counts)
