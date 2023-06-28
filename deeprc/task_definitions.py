@@ -143,7 +143,8 @@ class Target(torch.nn.Module):
 
 
 class Sequence_Target(torch.nn.Module):
-    def __init__(self, target_id: str = 'sequence_class', pos_weight: int = 999):
+    def __init__(self, target_id: str = 'sequence_class', pos_weight: int = 999, weigh_pos_by_inverse=True,
+                 weigh_seq_by_weight=True):
         """Creates a sequence classification target, i.e. initially, only the direction is provided.
 
         Network output for this task will be an n_instances output, with no activation function.
@@ -174,6 +175,8 @@ class Sequence_Target(torch.nn.Module):
         self.pos_weight = torch.tensor(pos_weight)
         self.reduction = "mean"
         self.target_loss = Sequence_Loss()
+        self.weigh_pos_by_inverse = weigh_pos_by_inverse
+        self.weigh_seq_by_weight = weigh_seq_by_weight
         # self.binary_cross_entropy_loss = torch.nn.BCEWithLogitsLoss(reduction='mean',
         #                                                             pos_weight=torch.tensor(pos_weight))
 
@@ -218,11 +221,17 @@ class Sequence_Target(torch.nn.Module):
         # return self.target_loss(raw_outputs, targets)
         # TODO: optimize dtypes for minimal memory requirements
         sequence_counts = torch.exp(sequence_counts).float()
-        normalised_sequence_counts = sequence_counts / sum(sequence_counts)
-        num_pos = torch.dot(targets.float(), sequence_counts)
-        num_neg = torch.dot(1 - targets.float(), sequence_counts)
-        pos_weight = torch.minimum(num_neg / num_pos, torch.tensor([1], device=targets.device))
-        return F.binary_cross_entropy_with_logits(raw_outputs, targets, weight=normalised_sequence_counts,
+        if self.weigh_seq_by_weight:
+            sequence_weights = sequence_counts / sum(sequence_counts)
+        else:
+            sequence_weights = torch.ones_like(raw_outputs)
+        if self.weigh_pos_by_inverse:
+            num_pos = torch.dot(targets.float(), sequence_counts)
+            num_neg = torch.dot(1 - targets.float(), sequence_counts)
+            pos_weight = torch.minimum(num_neg / num_pos, torch.tensor([1], device=targets.device))
+        else:
+            pos_weight = self.pos_weight
+        return F.binary_cross_entropy_with_logits(raw_outputs, targets, weight=sequence_weights,
                                                   pos_weight=pos_weight, reduction=self.reduction)
 
     def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor, sequence_counts: torch.Tensor) -> dict:
