@@ -181,7 +181,7 @@ if __name__ == '__main__':
             task_definition=task_definition,
             metadata_file=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/metadata.csv",
             metadata_file_column_sep=",",
-            n_worker_processes=8,
+            n_worker_processes=4,
             repertoiresdata_path=f"{root_dir}/datasets/{dataset_type}/{config['dataset']}/repertoires",
             metadata_file_id_column='filename',
             sequence_column='cdr3_aa',
@@ -232,7 +232,7 @@ if __name__ == '__main__':
             torch.manual_seed(seeds[args.idx])
             np.random.seed(seeds[args.idx])
 
-            run = wandb.init(project="Emerson_Linz_correct_split_loss_weighting", group=f"{group}_100t_100v_w_pos_sam",
+            run = wandb.init(project="Günter", group=f"{group}",
                              reinit=True)  # , tags=config["tag"])
             run.name = f"results_idx_{str(args.idx)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
 
