@@ -65,8 +65,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
           num_torch_threads: int = 3, learning_rate: float = 1e-4, l1_weight_decay: float = 0,
           l2_weight_decay: float = 0, log_training_stats_at: int = int(1e2), evaluate_at: int = int(5e3),
           ignore_missing_target_values: bool = True, prop: float = 0.7, train_then_freeze: bool = True,
-          staged_training: bool = True, plain_DeepRC: bool = False, log: bool = True, rep_loss_only=False,
-          consider_counts_in_loss: bool = True):
+          staged_training: bool = True, plain_DeepRC: bool = False, log: bool = True, rep_loss_only=False):
     """Train a DeepRC model on a given dataset on tasks specified in `task_definition`
      
      Model with lowest validation set loss on target `early_stopping_target_id` will be taken as final model (=early
