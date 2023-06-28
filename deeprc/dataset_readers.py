@@ -63,7 +63,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                      sequence_labels_column: str = 'label',
                      repertoire_files_column_sep: str = '\t', filename_extension: str = '.tsv', h5py_dict: dict = None,
                      all_sets: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
-                     with_test: bool = False, verbose: bool = True) \
+                     with_test: bool = False, verbose: bool = True, force_pos_in_subsampling=True) \
         -> Tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
     """Get data loaders for a dataset
     
@@ -190,7 +190,8 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                                      sample_id_column=metadata_file_id_column,
                                      metadata_file_column_sep=metadata_file_column_sep,
                                      task_definition=task_definition, keep_in_ram=keep_dataset_in_ram,
-                                     inputformat=inputformat, sequence_counts_scaling_fn=sequence_counts_scaling_fn)
+                                     inputformat=inputformat, sequence_counts_scaling_fn=sequence_counts_scaling_fn,
+                                     force_pos_in_subsampling=force_pos_in_subsampling)
     n_samples = len(full_dataset)
     if verbose:
         print(f"\tFound and loaded a total of {n_samples} samples")
@@ -285,7 +286,7 @@ class RepertoireDataset(Dataset):
                  sample_id_column: str = 'ID', metadata_file_column_sep: str = '\t',
                  task_definition: TaskDefinition = None,
                  keep_in_ram: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
-                 sample_n_sequences: int = None, verbose: bool = True):
+                 sample_n_sequences: int = None, verbose: bool = True, force_pos_in_subsampling=True):
         """PyTorch Dataset class for reading repertoire dataset from metadata file and hdf5 file
         
         See `deeprc.dataset_readers.make_dataloaders` for simple loading of datasets via PyTorch data loader.
@@ -333,6 +334,7 @@ class RepertoireDataset(Dataset):
         self.sequence_labels_hdf5_key = 'sequence_labels'
         self.sequences_hdf5_key = 'sequences'
         self.verbose = verbose
+        self.force_pos_in_subsampling = force_pos_in_subsampling
 
         if self.inputformat not in ['NCL', 'LNC']:
             raise ValueError(f"Unsupported input format {self.inputformat}")
@@ -434,15 +436,18 @@ class RepertoireDataset(Dataset):
                 sampledata = self.sampledata
             else:
                 sampledata = hf['sampledata']
-        pos_seq_inds = np.nonzero(
-            sampledata['sequence_labels'][sample_sequences_start_end[0]:sample_sequences_start_end[1]])[0]
+        if self.force_pos_in_subsampling:
+            pos_seq_inds = \
+                np.nonzero(sampledata['sequence_labels'][sample_sequences_start_end[0]:sample_sequences_start_end[1]])[
+                    0]
         if sample_n_sequences:
             rnd_gen = np.random.RandomState()  # TODO: Add shared memory integer random seed for dropout
             sample_sequence_inds = np.unique(rnd_gen.randint(
                 low=sample_sequences_start_end[0], high=sample_sequences_start_end[1],
                 size=sample_n_sequences))
             old_size = len(sample_sequence_inds)
-            sample_sequence_inds = list(set(sample_sequence_inds).union(pos_seq_inds))
+            if self.force_pos_in_subsampling:
+                sample_sequence_inds = list(set(sample_sequence_inds).union(pos_seq_inds))
             assert len(sample_sequence_inds) >= old_size
             if self.sampledata is None:
                 # Compatibility for indexing hdf5 file
