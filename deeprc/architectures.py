@@ -255,7 +255,8 @@ class DeepRC(nn.Module):
                  sequence_embedding_as_16_bit: bool = True,
                  consider_seq_counts: bool = False, add_positional_information: bool = True,
                  sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
-                 device: torch.device = torch.device('cuda:0'), forced_attention: bool = True):
+                 device: torch.device = torch.device('cuda:0'), forced_attention: bool = True,
+                 force_pos_in_subsampling=True, force_pos_in_attention=True):
         """DeepRC network as described in paper
         
         Apply `.reduce_and_stack_minibatch()` to reduce number of sequences by `sequence_reduction_fraction`
@@ -308,6 +309,8 @@ class DeepRC(nn.Module):
         self.sequence_reduction_fraction = sequence_reduction_fraction
         self.reduction_mb_size = int(reduction_mb_size)
         self.forced_attention = forced_attention
+        self.force_pos_in_subsampling = force_pos_in_subsampling
+        self.force_pos_in_attention = force_pos_in_attention
 
         # sequence embedding network (h())
         if sequence_embedding_as_16_bit:
@@ -559,6 +562,10 @@ class DeepRC(nn.Module):
 
             # Get indices of k sequences with highest attention weights
             _, used_sequences = torch.topk(attention_acts, n_reduced_sequences, dim=0, largest=True, sorted=True)
+
+            if self.force_pos_in_attention:
+                pos_seq_inds = np.nonzero(sequence_labels)[0]
+                used_sequences = list(set(used_sequences).union(pos_seq_inds))
 
             # Get top k sequences and sequence lengths
             reduced_inputs = inputs[used_sequences.to(device=self.device)].detach().to(device=self.device,
