@@ -215,8 +215,8 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
     if cross_validation_fold >= len(split_inds):
         raise ValueError(f"Demanded `cross_validation_fold` {cross_validation_fold} but only {len(split_inds)} splits "
                          f"exist in `split_inds`.")
-    # if with_test:
-    testset_inds = split_inds.pop(cross_validation_fold)
+    if with_test:
+        testset_inds = split_inds.pop(cross_validation_fold)
     validationset_inds = split_inds.pop(cross_validation_fold - 1)
     trainingset_inds = np.concatenate(split_inds)
 
