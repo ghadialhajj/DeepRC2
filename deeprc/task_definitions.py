@@ -228,7 +228,8 @@ class Sequence_Target(torch.nn.Module):
         if self.weigh_pos_by_inverse:
             num_pos = torch.dot(targets.float(), sequence_counts)
             num_neg = torch.dot(1 - targets.float(), sequence_counts)
-            pos_weight = torch.minimum(num_neg / num_pos, torch.tensor([1], device=targets.device))
+            candidate_weight = torch.Tensor(num_neg / num_pos)
+            pos_weight = torch.where(torch.isinf(candidate_weight), self.pos_weight, candidate_weight)
         else:
             pos_weight = self.pos_weight
         return F.binary_cross_entropy_with_logits(raw_outputs, targets, weight=sequence_weights,
