@@ -119,7 +119,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
     """
 
     # initialize the early_stopping object
-    early_stopping = EarlyStopping(patience=10, verbose=True)
+    early_stopping = EarlyStopping(patience=5, verbose=True)
 
     if log:
         logger.log_stats(model=model, device=device, step=0, log_and_att_hists=True)
@@ -277,8 +277,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         scores, sequence_scores = evaluate(model=model, dataloader=validationset_eval_dataloader,
                                                            task_definition=task_definition, device=device)
                         scoring_loss = scores[early_stopping_target_id]['loss']
-                        if second_phase:
-                            early_stopping(scoring_loss, model)
+                        early_stopping(scoring_loss, model)
 
                         print(f" ...done!")
                         tprint(f"[validation] u: {update:07d}; scores: {scores};")
@@ -310,9 +309,9 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     if update >= n_updates:
                         break
 
-                # if early_stopping.early_stop:
-                #     print("Early stopping")
-                #     break
+                if early_stopping.early_stop:
+                    print("Early stopping")
+                    break
             update_progess_bar.close()
         finally:
             # In any case, save the current model and best model to a file
