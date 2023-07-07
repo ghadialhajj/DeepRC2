@@ -564,8 +564,9 @@ class DeepRC(nn.Module):
             _, used_sequences = torch.topk(attention_acts, n_reduced_sequences, dim=0, largest=True, sorted=True)
 
             if self.force_pos_in_attention:
-                pos_seq_inds = np.nonzero(sequence_labels)[0]
+                pos_seq_inds = np.nonzero(sequence_labels)[:, 0]
                 used_sequences = list(set(used_sequences).union(pos_seq_inds))
+                used_sequences = torch.tensor(used_sequences)
 
             # Get top k sequences and sequence lengths
             reduced_inputs = inputs[used_sequences.to(device=self.device)].detach().to(device=self.device,
