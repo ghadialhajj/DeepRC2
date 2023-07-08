@@ -253,7 +253,8 @@ class DeepRC(nn.Module):
                  output_network: torch.nn.Module = OutputNetwork(
                      n_input_features=32, n_output_features=1, n_layers=0, n_units=32),
                  sequence_embedding_as_16_bit: bool = True,
-                 consider_seq_counts: bool = False, add_positional_information: bool = True,
+                 consider_seq_counts: bool = True, consider_seq_counts_after_cnn=False,
+                 add_positional_information: bool = True,
                  sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
                  device: torch.device = torch.device('cuda:0'), forced_attention: bool = True,
                  force_pos_in_subsampling=True, force_pos_in_attention=True):
@@ -305,6 +306,7 @@ class DeepRC(nn.Module):
         self.max_seq_len = max_seq_len
         self.device = device
         self.consider_seq_counts = consider_seq_counts
+        self.consider_seq_counts_after_cnn = consider_seq_counts_after_cnn
         self.add_positional_information = add_positional_information
         self.sequence_reduction_fraction = sequence_reduction_fraction
         self.reduction_mb_size = int(reduction_mb_size)
@@ -406,7 +408,8 @@ class DeepRC(nn.Module):
         return mb_targets, mb_reduced_inputs, mb_reduced_sequence_lengths, mb_reduced_sequence_counts, \
             mb_reduced_sequence_labels, mb_n_sequences
 
-    def forward(self, inputs_flat, sequence_lengths_flat, sequence_labels_flat, n_sequences_per_bag):
+    def forward(self, inputs_flat, sequence_lengths_flat, n_sequences_per_bag,
+                sequence_counts):
         """ Apply DeepRC (see Fig.2 in paper)
         
         Parameters
@@ -432,11 +435,10 @@ class DeepRC(nn.Module):
         mb_emb_seqs = self.sequence_embedding(inputs_flat,
                                               sequence_lengths=sequence_lengths_flat).to(dtype=torch.float32)
 
+        if self.consider_seq_counts_after_cnn:
+            mb_emb_seqs = mb_emb_seqs * sequence_counts.unsqueeze(1)
         # Calculate attention weights f() before softmax function for all bags in mb (shape: (d_k, 1))
-        if self.forced_attention:
-            mb_attention_weights = sequence_labels_flat.reshape(-1, 1)
-        else:
-            mb_attention_weights = self.attention_nn(mb_emb_seqs)
+        mb_attention_weights = self.attention_nn(mb_emb_seqs)
 
         # Compute representation per bag (N times shape (d_v,))
         mb_emb_reps_after_attention = []
