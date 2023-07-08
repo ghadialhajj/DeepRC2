@@ -193,8 +193,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     # Calculate predictions from reduced sequences,
                     logit_outputs, attention_outputs, _ = model(inputs_flat=inputs,
                                                                 sequence_lengths_flat=sequence_lengths,
-                                                                sequence_labels_flat=sequence_labels,
-                                                                n_sequences_per_bag=n_sequences)
+                                                                n_sequences_per_bag=n_sequences,
+                                                                sequence_counts=sequence_counts)
 
                     # Calculate losses
                     pred_loss = task_definition.get_loss(raw_outputs=logit_outputs, targets=targets,
