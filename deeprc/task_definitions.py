@@ -143,7 +143,7 @@ class Target(torch.nn.Module):
 
 
 class Sequence_Target(torch.nn.Module):
-    def __init__(self, target_id: str = 'sequence_class', pos_weight: int = 999, weigh_pos_by_inverse=True,
+    def __init__(self, target_id: str = 'sequence_class', pos_weight: int = 999, weigh_pos_by_inverse=False,
                  weigh_seq_by_weight=True):
         """Creates a sequence classification target, i.e. initially, only the direction is provided.
 
