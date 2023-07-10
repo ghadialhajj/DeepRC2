@@ -119,7 +119,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
     """
 
     # initialize the early_stopping object
-    early_stopping = EarlyStopping(patience=5, verbose=True)
+    early_stopping = EarlyStopping(patience=10, verbose=True)
 
     if log:
         logger.log_stats(model=model, device=device, step=0, log_and_att_hists=True)
