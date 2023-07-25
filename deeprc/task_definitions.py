@@ -172,7 +172,7 @@ class Sequence_Target(torch.nn.Module):
         super().__init__()
         self.__target_id__ = target_id
         self.__n_output_features__ = 1
-        self.pos_weight = torch.tensor(pos_weight)
+        self.pos_weight = torch.tensor(pos_weight, device="cuda:0")
         self.reduction = "mean"
         self.target_loss = Sequence_Loss()
         self.weigh_pos_by_inverse = weigh_pos_by_inverse
@@ -220,15 +220,15 @@ class Sequence_Target(torch.nn.Module):
         """
         # return self.target_loss(raw_outputs, targets)
         # TODO: optimize dtypes for minimal memory requirements
-        sequence_counts = torch.exp(sequence_counts).float()
+        sequence_counts = torch.exp(sequence_counts).ceil().float()
         if self.weigh_seq_by_weight:
-            sequence_weights = sequence_counts / sum(sequence_counts)
+            sequence_weights = sequence_counts / sum(sequence_counts) * len(sequence_counts)
         else:
             sequence_weights = torch.ones_like(raw_outputs)
         if self.weigh_pos_by_inverse:
             num_pos = torch.dot(targets.float(), sequence_counts)
             num_neg = torch.dot(1 - targets.float(), sequence_counts)
-            candidate_weight = torch.Tensor(num_neg / num_pos)
+            candidate_weight = (num_neg / num_pos).to(device="cuda:0")
             pos_weight = torch.where(torch.isinf(candidate_weight), self.pos_weight, candidate_weight)
         else:
             pos_weight = self.pos_weight
