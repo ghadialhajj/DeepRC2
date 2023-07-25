@@ -257,7 +257,7 @@ class DeepRC(nn.Module):
                  add_positional_information: bool = True,
                  sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
                  device: torch.device = torch.device('cuda:0'), forced_attention: bool = True,
-                 force_pos_in_subsampling=True, force_pos_in_attention=True):
+                 force_pos_in_attention=True):
         """DeepRC network as described in paper
         
         Apply `.reduce_and_stack_minibatch()` to reduce number of sequences by `sequence_reduction_fraction`
@@ -311,7 +311,6 @@ class DeepRC(nn.Module):
         self.sequence_reduction_fraction = sequence_reduction_fraction
         self.reduction_mb_size = int(reduction_mb_size)
         self.forced_attention = forced_attention
-        self.force_pos_in_subsampling = force_pos_in_subsampling
         self.force_pos_in_attention = force_pos_in_attention
 
         # sequence embedding network (h())
@@ -567,7 +566,7 @@ class DeepRC(nn.Module):
 
             if self.force_pos_in_attention:
                 pos_seq_inds = np.nonzero(sequence_labels)[:, 0]
-                used_sequences = list(set(used_sequences).union(pos_seq_inds))
+                used_sequences = list(set(used_sequences.tolist()).union(pos_seq_inds.tolist()))
                 used_sequences = torch.tensor(used_sequences)
 
             # Get top k sequences and sequence lengths
