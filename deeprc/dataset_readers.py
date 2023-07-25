@@ -436,10 +436,6 @@ class RepertoireDataset(Dataset):
                 sampledata = self.sampledata
             else:
                 sampledata = hf['sampledata']
-        if self.force_pos_in_subsampling:
-            pos_seq_inds = \
-                np.nonzero(sampledata['sequence_labels'][sample_sequences_start_end[0]:sample_sequences_start_end[1]])[
-                    0]
         if sample_n_sequences:
             rnd_gen = np.random.RandomState()  # TODO: Add shared memory integer random seed for dropout
             sample_sequence_inds = np.unique(rnd_gen.randint(
@@ -447,6 +443,9 @@ class RepertoireDataset(Dataset):
                 size=sample_n_sequences))
             old_size = len(sample_sequence_inds)
             if self.force_pos_in_subsampling:
+                pos_seq_inds = \
+                    np.nonzero(
+                        sampledata['sequence_labels'][sample_sequences_start_end[0]:sample_sequences_start_end[1]])[0]
                 sample_sequence_inds = list(set(sample_sequence_inds).union(pos_seq_inds))
             assert len(sample_sequence_inds) >= old_size
             if self.sampledata is None:
