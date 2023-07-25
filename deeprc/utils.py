@@ -235,6 +235,7 @@ class Logger():
 
 def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
                 show_progress: bool = True, device: torch.device = torch.device('cuda:1')):
+    print("Weight Average: ", torch.mean(model.sequence_embedding.network[0].weight))
     with torch.no_grad():
         model.to(device=device)
         all_logits = []
