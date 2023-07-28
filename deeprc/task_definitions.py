@@ -220,20 +220,34 @@ class Sequence_Target(torch.nn.Module):
         """
         # return self.target_loss(raw_outputs, targets)
         # TODO: optimize dtypes for minimal memory requirements
-        sequence_counts = torch.exp(sequence_counts).ceil().float()
+        # sequence_counts = torch.exp(sequence_counts).ceil().float()  # todo use log counts instead
+        sequence_counts = sequence_counts.float()
         if self.weigh_seq_by_weight:
-            sequence_weights = sequence_counts / sum(sequence_counts) * len(sequence_counts)
+            sequence_weights = sequence_counts / torch.sum(sequence_counts)
+            sequence_weights *= len(sequence_counts)
+            if torch.sum(sequence_counts) == 0:
+                sequence_weights = torch.ones_like(raw_outputs)
         else:
             sequence_weights = torch.ones_like(raw_outputs)
         if self.weigh_pos_by_inverse:
-            num_pos = torch.dot(targets.float(), sequence_counts)
-            num_neg = torch.dot(1 - targets.float(), sequence_counts)
-            candidate_weight = (num_neg / num_pos).to(device="cuda:0")
-            pos_weight = torch.where(torch.isinf(candidate_weight), self.pos_weight, candidate_weight)
+            # when we use targets and many of the sequences have a 0 (log) count, num_neg becomes large that the ratio
+            # becomes so large. This works only if there are no positive sequences with zero counts, otherwise,
+            # num_pos=0 (even though there are some positives), pos_weight=inf, and sequence_weights would contain NaN.
+            # This could be solved by either setting pos_seq_count to a minimum of 1, setting num_pos to a minimum of 1.
+            # The problem with this still happens when there are no sequences with count>1 since log(1)=0.
+            # One solution to solve this is to compare raw counts against 2 everywhere or only in this function (to
+            # avoid clash with scaling one hot encoded features.
+            num_pos = torch.maximum(torch.count_nonzero(targets * (sequence_counts != 0)), torch.tensor(1))
+            num_neg = torch.count_nonzero((1 - targets) * (sequence_counts != 0))
+            pos_weight = (num_neg / num_pos).to(device="cuda:0")
         else:
             pos_weight = self.pos_weight
-        return F.binary_cross_entropy_with_logits(raw_outputs, targets, weight=sequence_weights,
-                                                  pos_weight=pos_weight, reduction=self.reduction)
+        mask = targets == 1
+        sequence_weights[mask] *= pos_weight
+        # sequence_weights = sequence_weights * sum(sequence_weights) * len(sequence_weights)
+        loss = F.binary_cross_entropy_with_logits(raw_outputs, targets, weight=sequence_weights,
+                                                  reduction=self.reduction)
+        return loss
 
     def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor, sequence_counts: torch.Tensor) -> dict:
         """Get scores for this task as dictionary containing AUC, BACC, F1, and loss
