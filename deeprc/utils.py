@@ -94,15 +94,17 @@ class Logger():
         """
         print("Logging stats:")
         for dl_name, dl in self.dataloaders.items():
+            if not dl.batch_sampler.sampler.data_source.indices:
+                continue
             split_logits, split_attentions, split_rep_embs = self.get_values_per_dl(model, dl, device=device)
             split_rep_embs_pca = perform_pca(split_rep_embs)
             # split_rep_embs_tsne = perform_tsne(split_rep_embs)
             self.log_repertoire_rep(dl_name, split_rep_embs_pca, None, step)
             if log_and_att_hists:
-                self.log_logits(dl_name, split_logits, step)
+                # self.log_logits(dl_name, split_logits, step)
                 self.log_attention(dl_name, split_attentions, step)
-                if log_per_kernel and dl_name == "validationset_eval":
-                    self.log_per_kernel(split_rep_embs)
+                # if log_per_kernel and dl_name == "validationset_eval":
+                #     self.log_per_kernel(split_rep_embs)
 
     def log_repertoire_rep(self, dl_name, split_rep_embs_pca, split_rep_embs_tsne, step):
         self.plot_scatter(pos_vals=split_rep_embs_pca[0], neg_vals=split_rep_embs_pca[1], dl_name=dl_name,
