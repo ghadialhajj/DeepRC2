@@ -19,7 +19,7 @@ from deeprc.dataset_converters import DatasetToHDF5
 from deeprc.task_definitions import TaskDefinition
 
 
-def log_sequence_count_scaling(seq_counts: np.ndarray):
+def log_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, min_count: int):
     """Scale sequence counts `seq_counts` using a natural element-wise logarithm. Values `< 1` are set to `1`.
     To be used for `deeprc.dataset_readers.make_dataloaders`.
     
@@ -33,7 +33,10 @@ def log_sequence_count_scaling(seq_counts: np.ndarray):
     scaled_seq_counts
         Scaled sequence counts as numpy array.
     """
-    return np.log(np.maximum(seq_counts, 1))
+    scaled_counts = np.log(np.maximum(seq_counts, min_count))
+    # indices_to_change = np.logical_and(seq_labels == 1, scaled_counts == 0)
+    # scaled_counts[indices_to_change] = np.log(2)
+    return scaled_counts
 
 
 def no_sequence_count_scaling(seq_counts: np.ndarray):
@@ -63,7 +66,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                      sequence_labels_column: str = 'label',
                      repertoire_files_column_sep: str = '\t', filename_extension: str = '.tsv', h5py_dict: dict = None,
                      all_sets: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
-                     with_test: bool = False, verbose: bool = True, force_pos_in_subsampling=True) \
+                     with_test: bool = False, verbose: bool = True, force_pos_in_subsampling=True, min_count: int = 1) \
         -> Tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
     """Get data loaders for a dataset
     
@@ -191,7 +194,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                                      metadata_file_column_sep=metadata_file_column_sep,
                                      task_definition=task_definition, keep_in_ram=keep_dataset_in_ram,
                                      inputformat=inputformat, sequence_counts_scaling_fn=sequence_counts_scaling_fn,
-                                     force_pos_in_subsampling=force_pos_in_subsampling)
+                                     force_pos_in_subsampling=force_pos_in_subsampling, min_count=min_count)
     n_samples = len(full_dataset)
     if verbose:
         print(f"\tFound and loaded a total of {n_samples} samples")
@@ -286,7 +289,8 @@ class RepertoireDataset(Dataset):
                  sample_id_column: str = 'ID', metadata_file_column_sep: str = '\t',
                  task_definition: TaskDefinition = None,
                  keep_in_ram: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
-                 sample_n_sequences: int = None, verbose: bool = True, force_pos_in_subsampling=True):
+                 sample_n_sequences: int = None, verbose: bool = True, force_pos_in_subsampling=True,
+                 min_count: int = 1):
         """PyTorch Dataset class for reading repertoire dataset from metadata file and hdf5 file
         
         See `deeprc.dataset_readers.make_dataloaders` for simple loading of datasets via PyTorch data loader.
@@ -335,6 +339,7 @@ class RepertoireDataset(Dataset):
         self.sequences_hdf5_key = 'sequences'
         self.verbose = verbose
         self.force_pos_in_subsampling = force_pos_in_subsampling
+        self.min_count = min_count
 
         if self.inputformat not in ['NCL', 'LNC']:
             raise ValueError(f"Unsupported input format {self.inputformat}")
@@ -463,9 +468,10 @@ class RepertoireDataset(Dataset):
             seq_lens = sampledata['seq_lens'][sample_sequence_inds]
             sample_max_seq_len = seq_lens.max()
             aa_sequences = sampledata[self.sequences_hdf5_key][sample_sequence_inds, :sample_max_seq_len]
-            counts_per_sequence = \
-                self.sequence_counts_scaling_fn(sampledata[self.sequence_counts_hdf5_key][sample_sequence_inds])
             seq_labels = sampledata['sequence_labels'][sample_sequence_inds]
+            counts_per_sequence = \
+                self.sequence_counts_scaling_fn(sampledata[self.sequence_counts_hdf5_key][sample_sequence_inds],
+                                                seq_labels, self.min_count)
 
         if self.inputformat.startswith('LN'):
             aa_sequences = np.swapaxes(aa_sequences, 0, 1)
