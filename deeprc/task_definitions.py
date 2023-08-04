@@ -144,7 +144,7 @@ class Target(torch.nn.Module):
 
 class Sequence_Target(torch.nn.Module):
     def __init__(self, target_id: str = 'sequence_class', pos_weight: int = 999, weigh_pos_by_inverse=False,
-                 weigh_seq_by_weight=True):
+                 weigh_seq_by_weight=True, normalize=True, add_in_loss=True, device="cuda:0"):
         """Creates a sequence classification target, i.e. initially, only the direction is provided.
 
         Network output for this task will be an n_instances output, with no activation function.
@@ -172,11 +172,13 @@ class Sequence_Target(torch.nn.Module):
         super().__init__()
         self.__target_id__ = target_id
         self.__n_output_features__ = 1
-        self.pos_weight = torch.tensor(pos_weight, device="cuda:0")
-        self.reduction = "mean"
+        self.device = device
+        self.pos_weight = torch.tensor(pos_weight, device=self.device)
         self.target_loss = Sequence_Loss()
         self.weigh_pos_by_inverse = weigh_pos_by_inverse
         self.weigh_seq_by_weight = weigh_seq_by_weight
+        self.normalize = normalize
+        self.add_in_loss = add_in_loss
         # self.binary_cross_entropy_loss = torch.nn.BCEWithLogitsLoss(reduction='mean',
         #                                                             pos_weight=torch.tensor(pos_weight))
 
@@ -221,12 +223,15 @@ class Sequence_Target(torch.nn.Module):
         # return self.target_loss(raw_outputs, targets)
         # TODO: optimize dtypes for minimal memory requirements
         # sequence_counts = torch.exp(sequence_counts).ceil().float()  # todo use log counts instead
-        sequence_counts = sequence_counts.float()
+        # sequence_counts = torch.log(torch.exp(sequence_counts.float()) + torch.tensor(1))
+        if self.add_in_loss:
+            sequence_counts = torch.log1p(torch.exp(sequence_counts.float()))
         if self.weigh_seq_by_weight:
             sequence_weights = sequence_counts / torch.sum(sequence_counts)
             sequence_weights *= len(sequence_counts)
-            if torch.sum(sequence_counts) == 0:
-                sequence_weights = torch.ones_like(raw_outputs)
+
+            # if torch.sum(sequence_counts) == 0:
+            #     sequence_weights = torch.ones_like(raw_outputs)
         else:
             sequence_weights = torch.ones_like(raw_outputs)
         if self.weigh_pos_by_inverse:
@@ -237,16 +242,26 @@ class Sequence_Target(torch.nn.Module):
             # The problem with this still happens when there are no sequences with count>1 since log(1)=0.
             # One solution to solve this is to compare raw counts against 2 everywhere or only in this function (to
             # avoid clash with scaling one hot encoded features.
-            num_pos = torch.maximum(torch.count_nonzero(targets * (sequence_counts != 0)), torch.tensor(1))
-            num_neg = torch.count_nonzero((1 - targets) * (sequence_counts != 0))
-            pos_weight = (num_neg / num_pos).to(device="cuda:0")
+            num_pos = torch.count_nonzero(targets)
+            num_neg = torch.count_nonzero(1 - targets)
+            pos_weight = (num_neg / num_pos).to(device=self.device)
         else:
             pos_weight = self.pos_weight
         mask = targets == 1
-        sequence_weights[mask] *= pos_weight
-        # sequence_weights = sequence_weights * sum(sequence_weights) * len(sequence_weights)
+        candidate_weights = torch.clone(sequence_weights)
+        candidate_weights[mask] *= pos_weight
+        if torch.all(torch.isnan(candidate_weights)):
+            sequence_weights = torch.ones_like(sequence_weights)
+        elif torch.any(torch.isinf(candidate_weights)):
+            candidate_weights[mask] *= self.pos_weight
+        else:
+            sequence_weights = candidate_weights
+        if self.normalize:
+            sequence_weights = sequence_weights / sum(sequence_weights) * len(sequence_weights)
+
         loss = F.binary_cross_entropy_with_logits(raw_outputs, targets, weight=sequence_weights,
-                                                  reduction=self.reduction)
+                                                  reduction="mean")
+        # loss = torch.sum(loss)/torch.count_nonzero(loss)
         return loss
 
     def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor, sequence_counts: torch.Tensor) -> dict:
