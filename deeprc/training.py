@@ -125,7 +125,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
     """
 
     # initialize the early_stopping object
-    early_stopping = EarlyStopping(patience=15, verbose=True)
+    early_stopping = EarlyStopping(patience=150, verbose=True)
 
     # if log:
     #     logger.log_stats(model=model, device=device, step=0, log_and_att_hists=True)
@@ -187,8 +187,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
                     # Get samples as lists
                     targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, sample_ids = data
-
-                    # Apply attention-based sequence reduction and create minibatch
+                    tensor_list_copy = [tensor.clone() for tensor in
+                                        inputs]  # Apply attention-based sequence reduction and create minibatch
                     with torch.no_grad():
                         targets, inputs, sequence_lengths, sequence_counts, sequence_labels, n_sequences = \
                             model.reduce_and_stack_minibatch(
@@ -218,7 +218,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     else:
                         if staged_training:
                             loss = pred_loss * second_phase + l1reg_loss * l1_weight_decay + attention_loss * (
-                                not rep_loss_only)
+                                not (rep_loss_only and second_phase))
                         else:
                             loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
 
@@ -238,8 +238,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                             # if log:
                             #     logg_and_att_hists = True if update == 1 or update % (
                             #             4 * log_training_stats_at) == 0 else False
-                            #     logger.log_stats(model=model, device=device, step=update,
-                            #                      log_and_att_hists=logg_and_att_hists)
+                            logger.log_stats(model=model, device=device, step=update,
+                                             log_and_att_hists=True)
                             # group = 'training/'
                             # # Loop through tasks and add losses to tensorboard
                             # pred_losses = task_definition.get_losses(raw_outputs=logit_outputs, targets=targets)
@@ -253,14 +253,15 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                             #           step=update)  # sum losses over targets + l1 + att.
 
                             group = 'gradients/'
+                            cnn_weights = torch.mean(model.sequence_embedding.network[0].weight)
+                            seq_grad = list(model.sequence_embedding.parameters())[0].grad.mean().cpu().numpy()
                             wandb.log(
-                                {f"{group}sequence_embedding_grad_mean": list(model.sequence_embedding.parameters())[
-                                    0].grad.mean().cpu().numpy()}, step=update)
+                                {f"{group}sequence_embedding_grad_mean": seq_grad}, step=update)
                             wandb.log({f"{group}attention_nn_grad_mean": list(model.attention_nn.parameters())[
                                 0].grad.mean().cpu().numpy()}, step=update)
                             wandb.log({f"{group}output_nn_grad_mean": list(model.output_nn.parameters())[
                                 0].grad.mean().cpu().numpy()}, step=update)
-                            wandb.log({f"{group}cnn_weights": torch.mean(model.sequence_embedding.network[0].weight)},
+                            wandb.log({f"{group}cnn_weights": cnn_weights},
                                       step=update)
 
                     # Calculate scores and loss on training set and validation set
