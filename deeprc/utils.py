@@ -94,7 +94,7 @@ class Logger():
         """
         print("Logging stats:")
         for dl_name, dl in self.dataloaders.items():
-            if not dl.batch_sampler.sampler.data_source.indices:
+            if not dl.batch_sampler.sampler.data_source.indices.any():
                 continue
             split_logits, split_attentions, split_rep_embs = self.get_values_per_dl(model, dl, device=device)
             split_rep_embs_pca = perform_pca(split_rep_embs)
