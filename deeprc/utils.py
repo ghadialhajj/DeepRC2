@@ -324,6 +324,11 @@ def plot_motifs(motif_matrix, num_aas: int = 3, kernel_size: int = 5):
     return crp_logo.fig
 
 
+def rnd_int_special(low, high, size, probabilities):
+    inds = list(range(low, high))
+    return np.random.choice(inds, p=probabilities, size=size)
+
+
 if __name__ == '__main__':
     run = wandb.init(project="Test", reinit=True)  # , tags=config["tag"])
     cnn_weights = np.random.randn(4, 23, 5)

@@ -17,9 +17,10 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from deeprc.dataset_converters import DatasetToHDF5
 from deeprc.task_definitions import TaskDefinition
+from deeprc.utils import rnd_int_special
 
 
-def log_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, min_count: int):
+def log_sequence_count_scaling(seq_counts: np.ndarray, min_count: int):
     """Scale sequence counts `seq_counts` using a natural element-wise logarithm. Values `< 1` are set to `1`.
     To be used for `deeprc.dataset_readers.make_dataloaders`.
     
@@ -436,16 +437,26 @@ class RepertoireDataset(Dataset):
         """
         sample_sequences_start_end = self.sample_sequences_start_end[idx]
 
+        # todo: optimize to open the repertoire file only once
         with h5py.File(self.filepath, 'r') as hf:
             if self.sampledata is not None:
                 sampledata = self.sampledata
             else:
                 sampledata = hf['sampledata']
+        full_sequence_range = list(range(sample_sequences_start_end[0], sample_sequences_start_end[1]))
+        all_counts_per_sequence = self.sequence_counts_scaling_fn(
+            sampledata[self.sequence_counts_hdf5_key][full_sequence_range], self.min_count)
+        all_counts_per_sequence = all_counts_per_sequence / sum(all_counts_per_sequence)
+
         if sample_n_sequences:
-            rnd_gen = np.random.RandomState()  # TODO: Add shared memory integer random seed for dropout
-            sample_sequence_inds = np.unique(rnd_gen.randint(
-                low=sample_sequences_start_end[0], high=sample_sequences_start_end[1],
-                size=sample_n_sequences))
+            # rnd_gen = np.random.RandomState()  # TODO: Add shared memory integer random seed for dropout
+            # sample_sequence_inds = np.unique(rnd_gen.randint(
+            #     low=sample_sequences_start_end[0], high=sample_sequences_start_end[1],
+            #     size=sample_n_sequences))
+            sample_sequence_inds = rnd_int_special(low=sample_sequences_start_end[0],
+                                                   high=sample_sequences_start_end[1],
+                                                   size=sample_n_sequences,
+                                                   probabilities=all_counts_per_sequence)
             old_size = len(sample_sequence_inds)
             if self.force_pos_in_subsampling:
                 pos_seq_inds = \
@@ -471,7 +482,7 @@ class RepertoireDataset(Dataset):
             seq_labels = sampledata['sequence_labels'][sample_sequence_inds]
             counts_per_sequence = \
                 self.sequence_counts_scaling_fn(sampledata[self.sequence_counts_hdf5_key][sample_sequence_inds],
-                                                seq_labels, self.min_count)
+                                                self.min_count)
 
         if self.inputformat.startswith('LN'):
             aa_sequences = np.swapaxes(aa_sequences, 0, 1)
