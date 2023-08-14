@@ -14,14 +14,13 @@ with open(original_split_file, 'rb') as sfh:
 flattened_list = sorted(list(chain.from_iterable(split_inds)))[
                  :-n_test_files]  # indices of files **to use** (without invalid files) excluding the test files.
 
-filtered_metadata = metadata.iloc[flattened_list]  # metadata file without the test files.
-
 rnd_gen = np.random.RandomState(0)
 
 cv_splits_indices = [[] for _ in range(n_cv_folds)]
 
 # Positive class
-indices = np.where((filtered_metadata['CMV'].values == '+'))[0]
+indices = np.where((metadata['CMV'].values == '+'))[0]
+indices = list(set(indices).intersection(flattened_list))
 rnd_gen.shuffle(indices)
 
 n_sample_per_split = int(len(indices) / n_cv_folds)
@@ -31,7 +30,8 @@ cv_splits_indices[n_cv_folds - 1] += [
     indices[n_cv_folds * n_sample_per_split:]]  # assign left-over samples to last split
 
 # Negative class
-indices = np.where((filtered_metadata['CMV'].values == '-'))[0]
+indices = np.where((metadata['CMV'].values == '-'))[0]
+indices = list(set(indices).intersection(flattened_list))
 rnd_gen.shuffle(indices)
 
 n_sample_per_split = int(len(indices) / n_cv_folds)
@@ -44,5 +44,5 @@ cv_splits_indices = [np.sort(np.concatenate(i)) for i in cv_splits_indices]
 cv_splits_indices.append(np.array(list(range(len(metadata) - n_test_files, len(metadata)))))
 cv_splits_ids = [metadata['filename'].values[i] for i in cv_splits_indices]
 
-with open(f"/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_separate_test.pkl", 'wb') as fh:
+with open(f"/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_separate_test_correct.pkl", 'wb') as fh:
     pkl.dump(dict(inds=cv_splits_indices, sample_keys=cv_splits_ids), file=fh)
