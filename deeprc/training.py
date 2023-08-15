@@ -238,8 +238,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                             # if log:
                             #     logg_and_att_hists = True if update == 1 or update % (
                             #             4 * log_training_stats_at) == 0 else False
-                            logger.log_stats(model=model, device=device, step=update,
-                                             log_and_att_hists=True)
+                            # logger.log_stats(model=model, device=device, step=update,
+                            #                  log_and_att_hists=True)
                             # group = 'training/'
                             # # Loop through tasks and add losses to tensorboard
                             # pred_losses = task_definition.get_losses(raw_outputs=logit_outputs, targets=targets)

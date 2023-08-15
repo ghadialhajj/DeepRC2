@@ -32,11 +32,11 @@ parser.add_argument('--n_updates', help='Number of updates to train for. Recomme
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(50))
+                    type=int, default=int(100))
 # type=int, default=int(10))
 parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
                                                     'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(50))
+                    type=int, default=int(100))
 parser.add_argument('--sample_n_sequences', help='Number of instances to reduce repertoires to during training via'
                                                  'random dropout. This should be less than the number of instances per '
                                                  'repertoire. Only applied during training, not for evaluation. '
@@ -49,7 +49,7 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:1"
+device_name = "cuda:0"
 with_test = True
 device = torch.device(device_name)
 
@@ -61,23 +61,8 @@ base_results_dir = "/results/singletask_cnn/ideal"
 strategies = ["TE"]  # , "PDRC", "TASTE" , "FG", "TASTER", "T-SAFTE"]
 
 
-def get_indices(num_lists: int, with_test: bool = False, n_samples: int = 50):
-    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_separate_test.pkl"
-    with open(split_file, 'rb') as sfh:
-        split_inds = pkl.load(sfh)["inds"]
-    print(len(split_inds))
-    assert num_lists < len(split_inds)
-    indices_lists = split_inds[:num_lists]
-    if with_test:
-        indices_lists.append(split_inds[-1])
-    # else:
-    #     indices_lists.append([])
-    indices_lists = [i[:n_samples] for i in indices_lists]
-    return indices_lists
-
-
 def get_split_inds(n_folds, cohort, n_tr, n_v):
-    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_separate_test.pkl"
+    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_separate_test_correct.pkl"
     with open(split_file, 'rb') as sfh:
         split_inds = pkl.load(sfh)["inds"]
         if cohort == 2:
@@ -95,7 +80,7 @@ def get_split_inds(n_folds, cohort, n_tr, n_v):
 
 
 if __name__ == '__main__':
-    loss_config = {"min_cnt": 2, "normalize": False, "add_in_loss": False}
+    loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": True}
 
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.1,
@@ -103,21 +88,19 @@ if __name__ == '__main__':
               "dataset_type": "emerson_linz"}
     # Append current timestamp to results directory
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
-    # split_inds = get_indices(4, False, None)
-    # split_inds = get_indices(2, False, 50)
-    n_samples = 20
+    n_samples = 15
     split_inds = get_split_inds(0, 1, n_samples, 160)
     #
     # Create Task definitions
     #
-    # strategy = "TE"
+    strategy = "TE"
     # strategy = "TASTE"
-    strategy = "TASTER"
+    # strategy = "TASTER"
     # strategy = "PDRC"
     if strategy == "PDRC":
         fpa, fps, wsw, wsi = False, False, False, False
     else:
-        fpa, fps, wsw, wsi = True, True, True, True
+        fpa, fps, wsw, wsi = True, True, True, False
     task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
         BinaryTarget(  # Add binary classification task with sigmoid output function
             column_name='CMV',  # Column name of task in metadata file
@@ -161,7 +144,7 @@ if __name__ == '__main__':
     # for n_kernels, kernel_size in product(n_kernels_list, kernel_size_list):
 
     max_aucs = []
-    seeds_list = [0, 1, 2]
+    seeds_list = [1, 2]
     for seed in seeds_list:
         # for l1w in [0.1, 0.01, 0.01]:
         #     seed = 1
@@ -189,7 +172,7 @@ if __name__ == '__main__':
             torch.manual_seed(seed)
             np.random.seed(seed)
 
-            run = wandb.init(project="Günter4", group=f"{group}",
+            run = wandb.init(project="Correct Indices", group=f"czc_{group}",
                              reinit=True)  # , tags=config["tag"])
             run.name = f"results_idx_{str(seed)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
 
