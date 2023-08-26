@@ -257,7 +257,7 @@ class DeepRC(nn.Module):
                  add_positional_information: bool = True,
                  sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
                  device: torch.device = torch.device('cuda:0'), forced_attention: bool = True,
-                 force_pos_in_attention=True):
+                 force_pos_in_attention=True, training_mode: bool = True, temperature: float = 0.01):
         """DeepRC network as described in paper
         
         Apply `.reduce_and_stack_minibatch()` to reduce number of sequences by `sequence_reduction_fraction`
@@ -312,6 +312,8 @@ class DeepRC(nn.Module):
         self.reduction_mb_size = int(reduction_mb_size)
         self.forced_attention = forced_attention
         self.force_pos_in_attention = force_pos_in_attention
+        self.training_mode = training_mode
+        self.temperature = temperature
 
         # sequence embedding network (h())
         if sequence_embedding_as_16_bit:
@@ -448,7 +450,7 @@ class DeepRC(nn.Module):
             # Get attention weights for single bag (shape: (n_sequences_per_bag, 1))
             emb_seqs = mb_emb_seqs[start_i:start_i + n_seqs]
             # Calculate attention activations (softmax over n_sequences_per_bag) (shape: (n_sequences_per_bag, 1))
-            attention_weights = torch.softmax(attention_weights, dim=0)
+            attention_weights = torch.softmax(attention_weights / self.temperature, dim=0)
             # Apply attention weights to sequence features (shape: (n_sequences_per_bag, d_v))
             emb_reps_after_attention = emb_seqs * attention_weights
             # Compute weighted sum over sequence features after attention (format: (d_v,))
@@ -472,6 +474,7 @@ class DeepRC(nn.Module):
         sequence_char_indices = sequence_char_indices.to(dtype=torch.long, device=self.device)
         sequence_lengths = sequence_lengths.to(dtype=torch.long, device=self.device)
         # Only send sequence counts to device, if using sequence counts
+        # counts_copy = np.copy(counts_per_sequence.detach().cpu().numpy())
         if self.consider_seq_counts:
             counts_per_sequence = counts_per_sequence.to(dtype=self.embedding_dtype, device=self.device)
         # Allocate tensor for one-hot sequence features + position features
@@ -502,7 +505,7 @@ class DeepRC(nn.Module):
         """ Reduces sequences to top `n_sequences*sequence_reduction_fraction` important sequences,
         sorted descending by importance based on attention weights.
         Reduction is performed using minibatches of `reduction_mb_size` sequences.
-        
+
         Parameters
         ----------
         inputs: torch.Tensor
@@ -564,7 +567,7 @@ class DeepRC(nn.Module):
             # Get indices of k sequences with highest attention weights
             _, used_sequences = torch.topk(attention_acts, n_reduced_sequences, dim=0, largest=True, sorted=True)
 
-            if self.force_pos_in_attention:
+            if self.force_pos_in_attention and self.training_mode:
                 pos_seq_inds = np.nonzero(sequence_labels)[:, 0]
                 used_sequences = list(set(used_sequences.tolist()).union(pos_seq_inds.tolist()))
                 used_sequences = torch.tensor(used_sequences)
