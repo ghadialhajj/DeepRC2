@@ -19,7 +19,7 @@ from deeprc.dataset_converters import DatasetToHDF5
 from deeprc.task_definitions import TaskDefinition
 
 
-def log_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, min_count: int):
+def log_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, min_count: int, is_training: bool):
     """Scale sequence counts `seq_counts` using a natural element-wise logarithm. Values `< 1` are set to `1`.
     To be used for `deeprc.dataset_readers.make_dataloaders`.
     
@@ -35,8 +35,27 @@ def log_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, m
     """
     scaled_counts = np.log(np.maximum(seq_counts, min_count))
     # indices_to_change = np.logical_and(seq_labels == 1, scaled_counts == 0)
-    # scaled_counts[indices_to_change] = np.log(2)
-    return scaled_counts
+    # if is_training:
+    #     print("Boosting")
+    #     max_scaled_count = np.max(scaled_counts)
+    #     indices_to_change = seq_labels == 1
+    #     scaled_counts[indices_to_change] = max_scaled_count
+    # else:
+    #     print("Not boosting")
+
+    # sum_pos = np.dot(scaled_counts, seq_labels)
+    # sum_neg = np.dot(scaled_counts, 1 - seq_labels)
+    # factor = sum_neg / sum_pos if sum_pos != 0 else 1
+    # factor = np.minimum(factor, 200)
+    # if factor != 1:
+    #     indices_to_change = seq_labels == 1
+    #     scaled_counts[indices_to_change] *= factor
+
+    # scaled_counts = np.minimum(scaled_counts, np.finfo(np.float16).max)
+    # indices_to_change = np.logical_and(seq_labels == 0, scaled_counts > np.log(min_count))
+    # indices_to_change = seq_labels == 0
+    # scaled_counts[indices_to_change] = np.log(min_count)
+    return scaled_counts  # np.any(np.isinf(scaled_counts)) or np.any(np.isnan(scaled_counts))
 
 
 def no_sequence_count_scaling(seq_counts: np.ndarray):
@@ -471,7 +490,8 @@ class RepertoireDataset(Dataset):
             seq_labels = sampledata['sequence_labels'][sample_sequence_inds]
             counts_per_sequence = \
                 self.sequence_counts_scaling_fn(sampledata[self.sequence_counts_hdf5_key][sample_sequence_inds],
-                                                seq_labels, self.min_count)
+                                                seq_labels, self.min_count,
+                                                is_training=sample_n_sequences is not None)
 
         if self.inputformat.startswith('LN'):
             aa_sequences = np.swapaxes(aa_sequences, 0, 1)
