@@ -151,6 +151,9 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
         # Get optimizer (eps needs to be at about 1e-4 to be numerically stable with 16 bit float)
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=l2_weight_decay, eps=1e-4)
 
+        # Define the learning rate scheduler
+        # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=600, gamma=0.1)
+
         # Create a checkpoint dictionary with objects we want to have saved and loaded if needed
         state = dict(model=model, optimizer=optimizer, update=0, best_validation_loss=np.inf)
 
@@ -228,6 +231,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     loss.backward()
                     optimizer.step()
 
+                    # scheduler.step()
                     update += 1
                     update_progess_bar.update()
                     update_progess_bar.set_description(desc=f"loss={total_loss.item():6.4f}", refresh=True)
@@ -263,6 +267,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                                 0].grad.mean().cpu().numpy()}, step=update)
                             wandb.log({f"{group}cnn_weights": cnn_weights},
                                       step=update)
+                            wandb.log({f"{group}learning_rate": optimizer.param_groups[0]["lr"]},
+                                      step=update)
 
                     # Calculate scores and loss on training set and validation set
                     if update % evaluate_at == 0 or update == n_updates or update == 1:
@@ -282,6 +288,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                             [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
                              for score_name, score in task_scores.items()]
 
+                        model.training_mode = False
                         print("  Calculating validation score...")
                         scores, sequence_scores = evaluate(model=model, dataloader=validationset_eval_dataloader,
                                                            task_definition=task_definition, device=device)
@@ -295,9 +302,13 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         for task_id, task_scores in scores.items():
                             [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
                              for score_name, score in task_scores.items()]
+                            if task_scores["roc_auc"] > 0.7:
+                                optimizer.param_groups[0]["lr"] = 1e-5
                         for task_id, task_scores in sequence_scores.items():
                             [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
                              for score_name, score in task_scores.items()]
+                        logger.log_stats(model, step=update, log_and_att_hists=True, device=device)
+                        model.training_mode = True
 
                         # If we have a new best loss on the validation set, we save the model as new best model
                         if scores[early_stopping_target_id]['roc_auc'] > max_auc:
@@ -306,7 +317,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         # If we have a new best loss on the validation set, we save the model as new best model
                         if best_validation_loss > scoring_loss:
                             best_validation_loss = scoring_loss
-                            tprint(f"  New best validation loss for {early_stopping_target_id}: {scoring_loss}")
+                            tprint(f"New best validation loss for {early_stopping_target_id}: {scoring_loss}")
                             # Save current state as RAM object
                             state['update'] = update
                             state['best_validation_loss'] = scoring_loss
