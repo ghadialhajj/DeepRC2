@@ -202,6 +202,9 @@ class Sequence_Target(torch.nn.Module):
         """
         return torch.sigmoid(raw_outputs)
 
+    def clean_zero_counts(self, list_of_tensors: List[torch.Tensor], indices: torch.Tensor):
+        return [tensor[indices] for tensor in list_of_tensors]
+
     def loss_function(self, raw_outputs: torch.Tensor, targets: torch.Tensor,
                       sequence_counts: torch.Tensor) -> torch.Tensor:
         """Custom loss used for training on this task
@@ -224,6 +227,8 @@ class Sequence_Target(torch.nn.Module):
         # TODO: optimize dtypes for minimal memory requirements
         # sequence_counts = torch.exp(sequence_counts).ceil().float()  # todo use log counts instead
         # sequence_counts = torch.log(torch.exp(sequence_counts.float()) + torch.tensor(1))
+        # raw_outputs, targets, sequence_counts = self.clean_zero_counts([raw_outputs, targets, sequence_counts],
+        #                                                                sequence_counts.nonzero())
         if self.add_in_loss:
             sequence_counts = torch.log1p(torch.exp(sequence_counts.float()))
         if self.weigh_seq_by_weight:
