@@ -99,7 +99,7 @@ class Logger():
             split_logits, split_attentions, split_rep_embs = self.get_values_per_dl(model, dl, device=device)
             split_rep_embs_pca = perform_pca(split_rep_embs)
             # split_rep_embs_tsne = perform_tsne(split_rep_embs)
-            self.log_repertoire_rep(dl_name, split_rep_embs_pca, None, step)
+            # self.log_repertoire_rep(dl_name, split_rep_embs_pca, None, step)
             if log_and_att_hists:
                 # self.log_logits(dl_name, split_logits, step)
                 self.log_attention(dl_name, split_attentions, step)
@@ -236,8 +236,7 @@ class Logger():
 
 
 def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
-                show_progress: bool = True, device: torch.device = torch.device('cuda:1')):
-    print("Weight Average: ", torch.mean(model.sequence_embedding.network[0].weight))
+                show_progress: bool = True, device: torch.device = torch.device('cuda:0')):
     with torch.no_grad():
         model.to(device=device)
         all_logits = []
