@@ -12,7 +12,7 @@ import dill as pkl
 import numpy as np
 import torch
 from deeprc.task_definitions import TaskDefinition, BinaryTarget, Sequence_Target
-from deeprc.dataset_readers import make_dataloaders, log_sequence_count_scaling
+from deeprc.dataset_readers import make_dataloaders, log_sequence_count_scaling, no_sequence_count_scaling
 from deeprc.architectures import DeepRC, SequenceEmbeddingCNN, AttentionNetwork, OutputNetwork
 from deeprc.training import train, evaluate
 import wandb
@@ -53,8 +53,6 @@ device_name = "cuda:0"
 with_test = True
 device = torch.device(device_name)
 
-seeds = [92, 9241, 5149, 41, 720, 813, 485, 85, 74]
-seed_idx = 0
 # root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
@@ -79,17 +77,50 @@ def get_split_inds(n_folds, cohort, n_tr, n_v):
     return [[], train_split_inds, val_split_inds]
 
 
+def get_cherry_picked_inds(cohort: int = 1, n_v: int = 160):
+    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_separate_test_correct.pkl"
+    with open(split_file, 'rb') as sfh:
+        split_inds = pkl.load(sfh)["inds"]
+        if cohort == 2:
+            split_inds = split_inds[-1]
+            # Perfect indices: High for pos, low for neg
+            train_split_inds = [731, 704, 753, 762, 730, 715, 686, 691, 758, 703, 710, 669, 709, 712, 713, 718, 723,
+                                728, 683, 687]
+            # High for pos and neg
+            # train_split_inds = [731, 704, 753, 762, 730, 715, 686, 691, 758, 703, 772, 692, 700, 705, 706, 734, 666,
+            #                     696, 750, 754]
+            # Low for pos and High for neg
+            # train_split_inds = [697, 680, 720, 708, 732, 768, 773, 745, 748, 749, 772, 692, 700, 705, 706, 734, 666,
+            #                     696, 750, 754]
+            # Low for pos and for neg
+            # train_split_inds = [697, 680, 720, 708, 732, 768, 773, 745, 748, 749, 710, 669, 709, 712, 713, 718, 723,
+            #                     728, 683, 687]
+
+        elif cohort == 1:
+            split_inds = split_inds[:-1]
+            split_inds = [a for b in split_inds for a in b]
+            train_split_inds = [230, 449, 258, 383, 185, 87, 311, 23, 540, 218, 455, 446, 94, 450, 112, 445, 250, 257,
+                                240, 239, 237, 233, 435, 278, 431, 274, 271, 270, 437, 439]
+    np.random.seed(0)
+    np.random.shuffle(train_split_inds)
+    val_split_inds = [x for x in split_inds if x not in train_split_inds]
+    np.random.shuffle(val_split_inds)
+    val_split_inds = val_split_inds[:n_v]
+    return [[], train_split_inds, val_split_inds]
+
+
 if __name__ == '__main__':
-    loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": True}
+    loss_config = {"min_cnt": 2, "normalize": False, "add_in_loss": False}
 
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.1,
               "dataset": "AIRR", "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "Emerson",
-              "dataset_type": "emerson_linz"}
+              "dataset_type": "emerson_linz", "attention_temperature": 0.001}
     # Append current timestamp to results directory
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
-    n_samples = 15
-    split_inds = get_split_inds(0, 1, n_samples, 160)
+    n_samples = 20
+    # split_inds = get_split_inds(0, 1, n_samples, 160)
+    split_inds = get_cherry_picked_inds(cohort=2, n_v=50)
     #
     # Create Task definitions
     #
@@ -100,7 +131,7 @@ if __name__ == '__main__':
     if strategy == "PDRC":
         fpa, fps, wsw, wsi = False, False, False, False
     else:
-        fpa, fps, wsw, wsi = True, True, True, False
+        fpa, fps, wsw, wsi = True, True, True, True
     task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
         BinaryTarget(  # Add binary classification task with sigmoid output function
             column_name='CMV',  # Column name of task in metadata file
@@ -111,9 +142,6 @@ if __name__ == '__main__':
                         normalize=loss_config["normalize"], add_in_loss=loss_config["add_in_loss"],
                         device=device), ]).to(device=device)
     #
-    # Get dataset
-    #
-    # Get data loaders for training set and training-, validation-, and test-set in evaluation mode (=no random subsampling)
     trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
         task_definition=task_definition,
         metadata_file=f"{root_dir}/datasets/{config['dataset_type']}/{config['dataset']}/metadata.csv",
@@ -144,21 +172,21 @@ if __name__ == '__main__':
     # for n_kernels, kernel_size in product(n_kernels_list, kernel_size_list):
 
     max_aucs = []
-    seeds_list = [1, 2]
+    seeds_list = [0, 1, 2]
     for seed in seeds_list:
         # for l1w in [0.1, 0.01, 0.01]:
         #     seed = 1
         n_kernels, kernel_size = 32, 9
         if strategy == "TE":
-            group = f"TE_n_up_{args.n_updates}_pw_{config['pos_weight_seq']}"
+            group = f"TE_n_up_{args.n_updates}"
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                            "plain_DeepRC": False, "rep_loss_only": False})
         elif strategy == "TASTE":
-            group = f"TASTE_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight_seq']}"
+            group = f"TASTE_n_up_{args.n_updates}_prop_{config['prop']}"
             config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
                            "plain_DeepRC": False, "rep_loss_only": False})
         elif strategy == "TASTER":
-            group = f"TASTER_n_up_{args.n_updates}_prop_{config['prop']}_pw_{config['pos_weight_seq']}"
+            group = f"TASTER_n_up_{args.n_updates}_prop_{config['prop']}"
             config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
                            "plain_DeepRC": False, "rep_loss_only": True})
         elif strategy == "PDRC":
@@ -172,7 +200,10 @@ if __name__ == '__main__':
             torch.manual_seed(seed)
             np.random.seed(seed)
 
-            run = wandb.init(project="Correct Indices", group=f"czc_{group}",
+            run = wandb.init(project="CP Indices",
+                             group=f"{group}_20_temp_{config['attention_temperature']}_nobp",
+                             # group=f"{group}_boost_positives_oval_20_temp_{config['attention_temperature']}_nobp",
+                             # group=f"{group}_boost_pos_lp_hn_wLRS@>0.7_to-5"
                              reinit=True)  # , tags=config["tag"])
             run.name = f"results_idx_{str(seed)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
 
@@ -201,12 +232,12 @@ if __name__ == '__main__':
             model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
                            attention_network=attention_network,
                            output_network=output_network,
-                           consider_seq_counts=True, consider_seq_counts_after_cnn=False, n_input_features=20,
-                           add_positional_information=True,
+                           consider_seq_counts=False, consider_seq_counts_after_cnn=False, n_input_features=20,
+                           add_positional_information=True, training_mode=True,
                            sequence_reduction_fraction=config["sequence_reduction_fraction"],
                            reduction_mb_size=config["reduction_mb_size"], device=device,
-                           forced_attention=config["forced_attention"], force_pos_in_attention=fpa
-                           ).to(device=device)
+                           forced_attention=config["forced_attention"], force_pos_in_attention=fpa,
+                           temperature=config["attention_temperature"]).to(device=device)
             #
             # Train DeepRC model
             #
@@ -216,7 +247,7 @@ if __name__ == '__main__':
                             validationset_eval_dataloader=validationset_eval, logger=logger, n_updates=args.n_updates,
                             evaluate_at=args.evaluate_at, device=device, results_directory=f"{root_dir}{results_dir}",
                             prop=config["prop"],  # l1_weight_decay=l1w,
-                            log_training_stats_at=args.log_training_stats_at,
+                            log_training_stats_at=args.log_training_stats_at, l2_weight_decay=0.01,
                             # Here our results and trained models will be stored
                             train_then_freeze=config["train_then_freeze"], staged_training=config["staged_training"],
                             plain_DeepRC=config["plain_DeepRC"], log=True, rep_loss_only=config["rep_loss_only"])
