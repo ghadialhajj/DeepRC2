@@ -88,7 +88,8 @@ class Logger():
             plt.close(fig)
 
     def log_stats(self, model: torch.nn.Module, device=torch.device('cuda:0'), step: int = 0,
-                  log_and_att_hists: bool = False, log_per_kernel: bool = False):
+                  log_and_att_hists: bool = False, log_per_kernel: bool = False,
+                  desired_dl_name: str = "trainingset_eval"):
         """
         Logs model statistics including repertoire embeddings, logits, and attentions for each dataloader.
         """
@@ -96,10 +97,12 @@ class Logger():
         for dl_name, dl in self.dataloaders.items():
             if not dl.batch_sampler.sampler.data_source.indices.any():
                 continue
+            if dl_name != desired_dl_name:
+                continue
             split_logits, split_attentions, split_rep_embs = self.get_values_per_dl(model, dl, device=device)
             split_rep_embs_pca = perform_pca(split_rep_embs)
             # split_rep_embs_tsne = perform_tsne(split_rep_embs)
-            # self.log_repertoire_rep(dl_name, split_rep_embs_pca, None, step)
+            self.log_repertoire_rep(dl_name, split_rep_embs_pca, None, step)
             if log_and_att_hists:
                 # self.log_logits(dl_name, split_logits, step)
                 self.log_attention(dl_name, split_attentions, step)
@@ -245,21 +248,26 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
         all_attentions = []
         all_seq_targets = []
         all_seq_counts = []
+        all_sample_ids = []
         for scoring_data in tqdm(dataloader, total=len(dataloader), desc="Evaluating model", disable=not show_progress):
             # Get samples as lists
             targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, sample_ids = scoring_data
 
             # Apply attention-based sequence reduction and create minibatch
-            targets, inputs, sequence_lengths, sequence_counts, sequence_labels, n_sequences = model.reduce_and_stack_minibatch(
+            targets, inputs, sequence_lengths, sequence_counts, sequence_labels, n_sequences, sequence_attentions = model.reduce_and_stack_minibatch(
                 targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence)
 
             # Compute predictions from reduced sequences
             raw_outputs, attention_outputs, emb_reps_after_attention = model(inputs_flat=inputs,
                                                                              sequence_lengths_flat=sequence_lengths,
                                                                              n_sequences_per_bag=n_sequences,
-                                                                             sequence_counts=sequence_counts)
+                                                                             sequence_counts=sequence_counts,
+                                                                             sequence_attentions=sequence_attentions,
+                                                                             sequence_labels=sequence_labels,
+                                                                             is_training=False)
 
             # Store predictions and labels
+            all_sample_ids.append(sample_ids)
             all_logits.append(raw_outputs.detach())
             all_emb_reps.append(emb_reps_after_attention.detach())
             all_targets.append(targets.detach())
