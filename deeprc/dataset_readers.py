@@ -19,7 +19,8 @@ from deeprc.dataset_converters import DatasetToHDF5
 from deeprc.task_definitions import TaskDefinition
 
 
-def log_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, min_count: int, is_training: bool):
+def log_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, min_count: int, is_training: bool,
+                               max_factor: int):
     """Scale sequence counts `seq_counts` using a natural element-wise logarithm. Values `< 1` are set to `1`.
     To be used for `deeprc.dataset_readers.make_dataloaders`.
     
@@ -35,30 +36,34 @@ def log_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, m
     """
     scaled_counts = np.log(np.maximum(seq_counts, min_count))
     # indices_to_change = np.logical_and(seq_labels == 1, scaled_counts == 0)
-    # if is_training:
-    #     print("Boosting")
-    #     max_scaled_count = np.max(scaled_counts)
-    #     indices_to_change = seq_labels == 1
-    #     scaled_counts[indices_to_change] = max_scaled_count
+    # if is_training or True:
+    # print("Boosting")
+    # max_scaled_count = np.max(scaled_counts)
+    # indices_to_change = seq_labels == 1
+    # scaled_counts[indices_to_change] = max_scaled_count
+    # scaled_counts /= np.max(scaled_counts)
+    # scaled_counts = torch.softmax(torch.Tensor(scaled_counts), 0).detach().cpu().numpy()
     # else:
     #     print("Not boosting")
-
-    # sum_pos = np.dot(scaled_counts, seq_labels)
-    # sum_neg = np.dot(scaled_counts, 1 - seq_labels)
-    # factor = sum_neg / sum_pos if sum_pos != 0 else 1
-    # factor = np.minimum(factor, 200)
-    # if factor != 1:
-    #     indices_to_change = seq_labels == 1
-    #     scaled_counts[indices_to_change] *= factor
-
-    # scaled_counts = np.minimum(scaled_counts, np.finfo(np.float16).max)
-    # indices_to_change = np.logical_and(seq_labels == 0, scaled_counts > np.log(min_count))
-    # indices_to_change = seq_labels == 0
-    # scaled_counts[indices_to_change] = np.log(min_count)
+    if is_training or True:
+        sum_pos = np.dot(scaled_counts, seq_labels)
+        sum_neg = np.dot(scaled_counts, 1 - seq_labels)
+        factor = sum_neg / sum_pos if sum_pos != 0 else 1
+        factor = np.minimum(factor, max_factor)
+        if factor != 1:
+            indices_to_change = seq_labels == 1
+            scaled_counts[indices_to_change] *= factor
+        print("factor ", factor)
     return scaled_counts  # np.any(np.isinf(scaled_counts)) or np.any(np.isnan(scaled_counts))
 
 
-def no_sequence_count_scaling(seq_counts: np.ndarray):
+def plain_log_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, min_count: int, is_training: bool,
+                                     max_factor: int):
+    scaled_counts = np.log(np.maximum(seq_counts, min_count))
+    return scaled_counts  # np.any(np.isinf(scaled_counts)) or np.any(np.isnan(scaled_counts))
+
+
+def no_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, min_count: int, is_training: bool):
     """No scaling of sequence counts `seq_counts`. Values `< 0` are set to `0`.
     To be used for `deeprc.dataset_readers.make_dataloaders`.
     
@@ -72,7 +77,9 @@ def no_sequence_count_scaling(seq_counts: np.ndarray):
     scaled_seq_counts
         Scaled sequence counts as numpy array.
     """
-    return np.maximum(seq_counts, 0)
+    scaled_counts = np.maximum(seq_counts, min_count)
+    scaled_counts /= sum(scaled_counts) * len(scaled_counts)
+    return scaled_counts
 
 
 def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repertoiresdata_path: str,
@@ -85,7 +92,8 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                      sequence_labels_column: str = 'label',
                      repertoire_files_column_sep: str = '\t', filename_extension: str = '.tsv', h5py_dict: dict = None,
                      all_sets: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
-                     with_test: bool = False, verbose: bool = True, force_pos_in_subsampling=True, min_count: int = 1) \
+                     with_test: bool = False, verbose: bool = True, force_pos_in_subsampling=True, min_count: int = 1,
+                     max_factor: int = 1) \
         -> Tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
     """Get data loaders for a dataset
     
@@ -208,12 +216,13 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
     #
     if verbose:
         print(f"Creating dataloader from repertoire files in {hdf5_file}")
-    full_dataset = RepertoireDataset(metadata_filepath=metadata_file, hdf5_filepath=hdf5_file,
+    full_dataset = RepertoireDataset(metadata_filepath=metadata_file, hdf5_filepath=hdf5_file, inputformat=inputformat,
                                      sample_id_column=metadata_file_id_column,
-                                     metadata_file_column_sep=metadata_file_column_sep,
-                                     task_definition=task_definition, keep_in_ram=keep_dataset_in_ram,
-                                     inputformat=inputformat, sequence_counts_scaling_fn=sequence_counts_scaling_fn,
-                                     force_pos_in_subsampling=force_pos_in_subsampling, min_count=min_count)
+                                     metadata_file_column_sep=metadata_file_column_sep, task_definition=task_definition,
+                                     keep_in_ram=keep_dataset_in_ram,
+                                     sequence_counts_scaling_fn=sequence_counts_scaling_fn,
+                                     force_pos_in_subsampling=force_pos_in_subsampling, min_count=min_count,
+                                     max_factor=max_factor)
     n_samples = len(full_dataset)
     if verbose:
         print(f"\tFound and loaded a total of {n_samples} samples")
@@ -309,7 +318,7 @@ class RepertoireDataset(Dataset):
                  task_definition: TaskDefinition = None,
                  keep_in_ram: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
                  sample_n_sequences: int = None, verbose: bool = True, force_pos_in_subsampling=True,
-                 min_count: int = 1):
+                 min_count: int = 1, max_factor: int = 1):
         """PyTorch Dataset class for reading repertoire dataset from metadata file and hdf5 file
         
         See `deeprc.dataset_readers.make_dataloaders` for simple loading of datasets via PyTorch data loader.
@@ -343,6 +352,7 @@ class RepertoireDataset(Dataset):
             Can be set for individual samples using `sample_n_sequences` parameter of __getitem__() method.
         verbose : bool
             Activate verbose mode
+            :param max_factor:
         """
         self.metadata_filepath = metadata_filepath
         self.filepath = hdf5_filepath
@@ -359,6 +369,7 @@ class RepertoireDataset(Dataset):
         self.verbose = verbose
         self.force_pos_in_subsampling = force_pos_in_subsampling
         self.min_count = min_count
+        self.max_factor = max_factor
 
         if self.inputformat not in ['NCL', 'LNC']:
             raise ValueError(f"Unsupported input format {self.inputformat}")
@@ -489,9 +500,10 @@ class RepertoireDataset(Dataset):
             aa_sequences = sampledata[self.sequences_hdf5_key][sample_sequence_inds, :sample_max_seq_len]
             seq_labels = sampledata['sequence_labels'][sample_sequence_inds]
             counts_per_sequence = \
-                self.sequence_counts_scaling_fn(sampledata[self.sequence_counts_hdf5_key][sample_sequence_inds],
-                                                seq_labels, self.min_count,
-                                                is_training=sample_n_sequences is not None)
+                self.sequence_counts_scaling_fn(
+                    seq_counts=sampledata[self.sequence_counts_hdf5_key][sample_sequence_inds],
+                    seq_labels=seq_labels, min_count=self.min_count,
+                    is_training=sample_n_sequences is not None, max_factor=self.max_factor)
 
         if self.inputformat.startswith('LN'):
             aa_sequences = np.swapaxes(aa_sequences, 0, 1)
@@ -616,4 +628,5 @@ class RepertoireDatasetSubset(Dataset):
             sample_n_sequences = self.sample_n_sequences
         target_features, sequences, seq_lens, counts_per_sequence, label_per_sequence, sample_id = \
             self.repertoire_reader.__getitem__(self.indices[idx], sample_n_sequences=sample_n_sequences)
+        # label_per_sequence = (2 * label_per_sequence - 1) * 5.
         return target_features, sequences, seq_lens, counts_per_sequence, label_per_sequence, sample_id
