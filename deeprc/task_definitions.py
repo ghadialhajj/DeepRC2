@@ -205,8 +205,13 @@ class Sequence_Target(torch.nn.Module):
     def clean_zero_counts(self, list_of_tensors: List[torch.Tensor], indices: torch.Tensor):
         return [tensor[indices] for tensor in list_of_tensors]
 
+    def loss_function2(self, raw_outputs: torch.Tensor, targets: torch.Tensor,
+                       sequence_counts: torch.Tensor) -> torch.Tensor:
+        return F.mse_loss(raw_outputs, targets.float())
+        # return F.binary_cross_entropy_with_logits(raw_outputs, targets, reduction="mean")
+
     def loss_function(self, raw_outputs: torch.Tensor, targets: torch.Tensor,
-                      sequence_counts: torch.Tensor) -> torch.Tensor:
+                      sequence_counts: torch.Tensor, temperature: float = 0.01) -> torch.Tensor:
         """Custom loss used for training on this task
 
         Parameters
@@ -239,16 +244,13 @@ class Sequence_Target(torch.nn.Module):
             #     sequence_weights = torch.ones_like(raw_outputs)
         else:
             sequence_weights = torch.ones_like(raw_outputs)
-        if self.weigh_pos_by_inverse:
-            # when we use targets and many of the sequences have a 0 (log) count, num_neg becomes large that the ratio
-            # becomes so large. This works only if there are no positive sequences with zero counts, otherwise,
-            # num_pos=0 (even though there are some positives), pos_weight=inf, and sequence_weights would contain NaN.
-            # This could be solved by either setting pos_seq_count to a minimum of 1, setting num_pos to a minimum of 1.
-            # The problem with this still happens when there are no sequences with count>1 since log(1)=0.
-            # One solution to solve this is to compare raw counts against 2 everywhere or only in this function (to
-            # avoid clash with scaling one hot encoded features.
+        if self.weigh_pos_by_inverse == "old":
             num_pos = torch.count_nonzero(targets)
             num_neg = torch.count_nonzero(1 - targets)
+            pos_weight = (num_neg / num_pos).to(device=self.device)
+        elif self.weigh_pos_by_inverse == "new":
+            num_pos = torch.dot(sequence_counts, targets.float())
+            num_neg = torch.dot(sequence_counts, 1 - targets.float())
             pos_weight = (num_neg / num_pos).to(device=self.device)
         else:
             pos_weight = self.pos_weight
@@ -264,6 +266,12 @@ class Sequence_Target(torch.nn.Module):
         if self.normalize:
             sequence_weights = sequence_weights / sum(sequence_weights) * len(sequence_weights)
 
+        # raw_outputs = torch.divide(raw_outputs, temperature)
+        # loss = F.mse_loss(raw_outputs, targets.float(), reduction="none")
+        # loss = loss * sequence_weights
+        # loss = loss / torch.sum(loss)
+        # loss = torch.sum(loss)
+        # targets = targets * 0.5 + 0.2
         loss = F.binary_cross_entropy_with_logits(raw_outputs, targets, weight=sequence_weights,
                                                   reduction="mean")
         # loss = torch.sum(loss)/torch.count_nonzero(loss)
@@ -290,8 +298,9 @@ class Sequence_Target(torch.nn.Module):
         predictions_thresholded = (predictions > 0.5).float().cpu().numpy()
         predictions = predictions.float().cpu().numpy()
         labels = targets.detach().cpu().numpy()
-        attentions_pos = np.dot(labels, predictions) / len(labels)
-        attentions_neg = np.dot(np.logical_not(labels), predictions) / len(labels)
+        # labels = (labels + 5) / 10
+        attentions_pos = np.dot(labels, predictions) / sum(labels)
+        attentions_neg = np.dot(np.logical_not(labels), predictions) / (len(labels) - sum(labels))
         avg_score_diff = attentions_pos - attentions_neg
         pr_auc = metrics.average_precision_score(y_true=labels, y_score=predictions, average=None)
         try:
@@ -738,9 +747,10 @@ class TaskDefinition(torch.nn.Module):
         return losses
 
     # Expand to multiple sequence targets, if needed
-    def get_sequence_loss(self, raw_attention: torch.Tensor, seq_labels: torch.Tensor, seq_counts: torch.Tensor):
+    def get_sequence_loss(self, raw_attention: torch.Tensor, seq_labels: torch.Tensor, seq_counts: torch.Tensor,
+                          temperature: float = 1):
         return self.__sequence_targets__[0].loss_function(raw_outputs=raw_attention, targets=seq_labels,
-                                                          sequence_counts=seq_counts)
+                                                          sequence_counts=seq_counts, temperature=temperature)
 
     def get_loss(self, raw_outputs: torch.Tensor, targets: torch.Tensor, ignore_missing_target_values: bool = True) \
             -> torch.Tensor:
