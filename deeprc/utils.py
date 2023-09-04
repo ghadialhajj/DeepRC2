@@ -219,10 +219,11 @@ class Logger():
 
     def log_per_kernel(self, split_rep_embs):
         config = dict(opacity=0.6, histnorm="percent", nbinsx=50)
-        split_rep_embs = torch.tensor(np.array(split_rep_embs))
+        split_rep_embs_0 = torch.tensor(np.array(split_rep_embs[0]))
+        split_rep_embs_1 = torch.tensor(np.array(split_rep_embs[1]))
         for kernel_idx in range(split_rep_embs[0].shape[1]):
-            pos_per_dim = split_rep_embs[0, :, kernel_idx]
-            neg_per_dim = split_rep_embs[1, :, kernel_idx]
+            pos_per_dim = split_rep_embs_0[:, kernel_idx]
+            neg_per_dim = split_rep_embs_1[:, kernel_idx]
             fig = go.Figure()
             fig.add_trace(go.Histogram(x=pos_per_dim.cpu().numpy(), **config, name="pos"))
             fig.add_trace(go.Histogram(x=neg_per_dim.cpu().numpy(), **config, name="neg"))
