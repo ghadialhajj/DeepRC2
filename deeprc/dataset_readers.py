@@ -36,7 +36,7 @@ def log_sequence_count_scaling(seq_counts: np.ndarray):
     return np.log(np.maximum(seq_counts, 1))
 
 
-def no_sequence_count_scaling(seq_counts: np.ndarray):
+def no_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, max_factor: float = 10):
     """No scaling of sequence counts `seq_counts`. Values `< 0` are set to `0`.
     To be used for `deeprc.dataset_readers.make_dataloaders`.
     
@@ -50,7 +50,16 @@ def no_sequence_count_scaling(seq_counts: np.ndarray):
     scaled_seq_counts
         Scaled sequence counts as numpy array.
     """
-    return np.maximum(seq_counts, 0)
+    scaled_counts = np.maximum(seq_counts, 0)
+    sum_pos = np.dot(scaled_counts, seq_labels)
+    sum_neg = np.dot(scaled_counts, 1 - seq_labels)
+    factor = sum_neg / sum_pos if sum_pos != 0 else 1
+    factor = np.minimum(factor, max_factor)
+    if factor != 1:
+        indices_to_change = seq_labels == 1
+        scaled_counts[indices_to_change] *= factor
+        print(factor)
+    return scaled_counts
 
 
 def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repertoiresdata_path: str,
@@ -63,7 +72,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                      sequence_labels_column: str = 'label', sequence_pools_column: str = "pool_label",
                      repertoire_files_column_sep: str = '\t', filename_extension: str = '.tsv', h5py_dict: dict = None,
                      all_sets: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
-                     with_test: bool = False, verbose: bool = True) \
+                     with_test: bool = False, verbose: bool = True, max_factor: int = 10) \
         -> Tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
     """Get data loaders for a dataset
     
@@ -190,7 +199,8 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                                      sample_id_column=metadata_file_id_column,
                                      metadata_file_column_sep=metadata_file_column_sep,
                                      task_definition=task_definition, keep_in_ram=keep_dataset_in_ram,
-                                     inputformat=inputformat, sequence_counts_scaling_fn=sequence_counts_scaling_fn)
+                                     inputformat=inputformat, sequence_counts_scaling_fn=sequence_counts_scaling_fn,
+                                     max_factor=max_factor)
     n_samples = len(full_dataset)
     if verbose:
         print(f"\tFound and loaded a total of {n_samples} samples")
@@ -285,7 +295,7 @@ class RepertoireDataset(Dataset):
                  sample_id_column: str = 'ID', metadata_file_column_sep: str = '\t',
                  task_definition: TaskDefinition = None,
                  keep_in_ram: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
-                 sample_n_sequences: int = None, verbose: bool = True):
+                 sample_n_sequences: int = None, verbose: bool = True, max_factor: float = 10):
         """PyTorch Dataset class for reading repertoire dataset from metadata file and hdf5 file
         
         See `deeprc.dataset_readers.make_dataloaders` for simple loading of datasets via PyTorch data loader.
@@ -333,6 +343,7 @@ class RepertoireDataset(Dataset):
         self.sequence_labels_hdf5_key = 'sequence_labels'
         self.sequence_pools_hdf5_key = 'sequence_pools'
         self.sequences_hdf5_key = 'sequences'
+        self.max_factor = max_factor
         self.verbose = verbose
 
         if self.inputformat not in ['NCL', 'LNC']:
@@ -451,7 +462,9 @@ class RepertoireDataset(Dataset):
             sample_max_seq_len = seq_lens.max()
             aa_sequences = sampledata[self.sequences_hdf5_key][sample_sequence_inds, :sample_max_seq_len]
             counts_per_sequence = \
-                self.sequence_counts_scaling_fn(sampledata[self.sequence_counts_hdf5_key][sample_sequence_inds])
+                self.sequence_counts_scaling_fn(sampledata[self.sequence_counts_hdf5_key][sample_sequence_inds],
+                                                sampledata[self.sequence_labels_hdf5_key][sample_sequence_inds],
+                                                max_factor=self.max_factor)
             seq_labels = sampledata['sequence_labels'][sample_sequence_inds]
             seq_pools = sampledata['sequence_pools'][sample_sequence_inds]
 
