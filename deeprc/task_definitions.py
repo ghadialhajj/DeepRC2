@@ -233,11 +233,15 @@ class Sequence_Target(Target):
         predictions_thresholded = (predictions > 0.5).float().cpu().numpy()
         predictions = predictions.float().cpu().numpy()
         labels = targets.detach().cpu().numpy()
-        attentions_pos = np.dot(labels, predictions) / len(labels)
-        attentions_neg = np.dot(np.logical_not(labels), predictions) / len(labels)
+        # labels = (labels + 5) / 10
+        attentions_pos = np.dot(labels, predictions) / sum(labels)
+        attentions_neg = np.dot(np.logical_not(labels), predictions) / (len(labels) - sum(labels))
         avg_score_diff = attentions_pos - attentions_neg
         pr_auc = metrics.average_precision_score(y_true=labels, y_score=predictions, average=None)
-        roc_auc = metrics.roc_auc_score(y_true=labels, y_score=predictions, average=None)
+        try:
+            roc_auc = metrics.roc_auc_score(y_true=labels, y_score=predictions, average=None)
+        except ValueError:
+            roc_auc = 0.5
         bacc = metrics.balanced_accuracy_score(y_true=labels, y_pred=predictions_thresholded)
         f1 = metrics.f1_score(y_true=labels, y_pred=predictions_thresholded, average='binary', pos_label=1)
         loss = self.loss_function(raw_outputs=raw_outputs, targets=targets).detach().mean().cpu().item()
