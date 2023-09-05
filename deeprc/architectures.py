@@ -255,6 +255,7 @@ class DeepRC(nn.Module):
                  sequence_embedding_as_16_bit: bool = True,
                  consider_seq_counts: bool = True, consider_seq_counts_after_cnn=False,
                  add_positional_information: bool = True, consider_seq_counts_after_att=False,
+                 consider_seq_counts_after_softmax=False,
                  sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
                  device: torch.device = torch.device('cuda:0'), forced_attention: bool = True,
                  force_pos_in_attention=True, training_mode: bool = True, temperature: float = 0.01):
@@ -308,6 +309,7 @@ class DeepRC(nn.Module):
         self.consider_seq_counts = consider_seq_counts
         self.consider_seq_counts_after_cnn = consider_seq_counts_after_cnn
         self.consider_seq_counts_after_att = consider_seq_counts_after_att
+        self.consider_seq_counts_after_softmax = consider_seq_counts_after_softmax
         self.add_positional_information = add_positional_information
         self.sequence_reduction_fraction = sequence_reduction_fraction
         self.reduction_mb_size = int(reduction_mb_size)
@@ -464,6 +466,8 @@ class DeepRC(nn.Module):
             # if not is_training:
             # attention_weights = attention_weights / self.get_temp(sequence_labels)
             attention_weights = torch.softmax(attention_weights, dim=0)
+            if self.consider_seq_counts_after_softmax:
+                attention_weights = attention_weights * sequence_counts[start_i:start_i + n_seqs].reshape(-1, 1)
             # Apply attention weights to sequence features (shape: (n_sequences_per_bag, d_v))
             emb_reps_after_attention = emb_seqs * attention_weights
             # Compute weighted sum over sequence features after attention (format: (d_v,))
