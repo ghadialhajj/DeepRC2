@@ -243,7 +243,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     update_progess_bar.update()
                     update_progess_bar.set_description(desc=f"loss={total_loss.item():6.4f}", refresh=True)
 
-                    if update % log_training_stats_at == 0 or update == 1:
+                    if update % log_training_stats_at == 0:
                         # Add to tensorboard
                         if log:
                             # if log:
@@ -310,7 +310,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
             # In any case, save the current model and best model to a file
             saver_loader.save_to_file(filename=f'lastsave_u{update}.tar.gzip')
             state.update(saver_loader.load_from_ram())  # load best model so far
-            saver_loader.save_to_file(filename=f'best_u{update}.tar.gzip')
+            saver_loader.save_to_file(filename=f'best_u{state["update"]}.tar.gzip')
             print('Finished Training!')
             # if log:
             #     logger.log_stats(model=model, device=device, step=n_updates, log_and_att_hists=True,
