@@ -45,6 +45,7 @@ def log_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, m
     # scaled_counts = torch.softmax(torch.Tensor(scaled_counts), 0).detach().cpu().numpy()
     # else:
     #     print("Not boosting")
+    #############
     if is_training or True:
         sum_pos = np.dot(scaled_counts, seq_labels)
         sum_neg = np.dot(scaled_counts, 1 - seq_labels)
@@ -53,7 +54,7 @@ def log_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, m
         if factor != 1:
             indices_to_change = seq_labels == 1
             scaled_counts[indices_to_change] *= factor
-        print("factor ", factor)
+        # print("factor ", factor)
     return scaled_counts  # np.any(np.isinf(scaled_counts)) or np.any(np.isnan(scaled_counts))
 
 
@@ -92,7 +93,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                      sequence_labels_column: str = 'label',
                      repertoire_files_column_sep: str = '\t', filename_extension: str = '.tsv', h5py_dict: dict = None,
                      all_sets: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
-                     with_test: bool = False, verbose: bool = True, force_pos_in_subsampling=True, min_count: int = 1,
+                     with_test: bool = False, verbose: bool = True, force_pos_in_subsampling=False, min_count: int = 1,
                      max_factor: int = 1) \
         -> Tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
     """Get data loaders for a dataset
