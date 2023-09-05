@@ -28,12 +28,12 @@ from deeprc.training import ESException
 #
 parser = argparse.ArgumentParser()
 parser.add_argument('--n_updates', help='Number of updates to train for. Recommended: int(1e5). Default: int(1e3)',
-                    type=int, default=int(5e3))
+                    type=int, default=int(5e4))
 # type=int, default=int(100))
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(50))
+                    type=int, default=int(500))
 # type=int, default=int(10))
 parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
                                                     'Recommended: int(5e3). Default: int(1e2).',
@@ -54,7 +54,6 @@ device_name = "cuda:0"
 with_test = True
 device = torch.device(device_name)
 
-# root_dir = "/home/ghadi/PycharmProjects/DeepRC2/deeprc"
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
 
@@ -63,11 +62,13 @@ def get_split_inds(n_folds, cohort, n_tr, n_v, seed):
     split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_separate_test_correct.pkl"
     with open(split_file, 'rb') as sfh:
         split_inds = pkl.load(sfh)["inds"]
-        if cohort == 2:
-            split_inds = split_inds[-1]
-        elif cohort == 1:
-            split_inds = split_inds[:-1]
-            split_inds = [a for b in split_inds for a in b]
+    if cohort == 2:
+        split_inds = split_inds[-1]
+    elif cohort == 1:
+        split_inds = split_inds[:-1]
+        split_inds = [a for b in split_inds for a in b]
+    else:
+        split_inds = [a for b in split_inds for a in b]
     np.random.seed(seed)
     np.random.shuffle(split_inds)
     # split_inds = [split_inds[i * int(len(split_inds) / n_folds): (i + 1) * int(len(split_inds) / n_folds)] for i in
@@ -157,20 +158,29 @@ def get_cherry_picked_inds(cohort: int = 1, n_t: int = 30, n_v: int = 160, best_
     return [[], train_split_inds, val_split_inds]
 
 
+def get_original_inds():
+    # Get file for dataset splits
+    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_splits.pkl"
+    with open(split_file, 'rb') as sfh:
+        split_inds = pkl.load(sfh)
+    return split_inds
+
+
 if __name__ == '__main__':
     loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": True}
     config = {"sequence_reduction_fraction": 0.01, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.2,
               "dataset": "AIRR", "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "Emerson",
               "dataset_type": "emerson_linz_2", "attention_temperature": 1, "best_pos": None, "best_neg": None,
-              "max_factor": 150}
+              "max_factor": 50, "consider_seq_counts": True, "consider_seq_counts_after_cnn": False,
+              "consider_seq_counts_after_att": False, "consider_seq_counts_after_softmax": False}
 
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
     # strategy = "TE"
     # strategy = "FG"
     # strategy = "TASTE"
-    strategy = "TASTER"
-    # strategy = "PDRC"
+    # strategy = "TASTER"
+    strategy = "PDRC"
     if strategy == "PDRC":
         fpa, fps, wsw, wsi = False, False, False, False
     else:
@@ -180,11 +190,9 @@ if __name__ == '__main__':
     seeds_list = [0, 1, 2]
     for seed in seeds_list:
         n_kernels, kernel_size = 32, 9
-        n_samples = 40
-        cohort = 2
-        split_inds = get_split_inds(0, cohort, n_samples, 60, seed)
-        # split_inds = get_cherry_picked_inds(cohort=2, n_v=50, n_t=n_samples, best_pos=config["best_pos"]
-        #                                     best_neg=config["best_neg"])
+        n_samples = 480
+        cohort = 3
+        split_inds = get_split_inds(0, cohort, n_samples, 150, seed)
 
         task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
             BinaryTarget(column_name='CMV', true_class_value='+'),
@@ -203,7 +211,8 @@ if __name__ == '__main__':
             sequence_counts_column="duplicate_count",
             sequence_labels_column='matched',
             sample_n_sequences=args.sample_n_sequences,
-            sequence_counts_scaling_fn=plain_log_sequence_count_scaling, # if strategy == "PDRC" else log_sequence_count_scaling,
+            sequence_counts_scaling_fn=log_sequence_count_scaling,
+            # if strategy == "PDRC" else log_sequence_count_scaling,
             with_test=with_test,
             split_inds=split_inds,
             force_pos_in_subsampling=fps,
@@ -243,13 +252,8 @@ if __name__ == '__main__':
             torch.manual_seed(seed)
             np.random.seed(seed)
 
-            run = wandb.init(project="Simulation",
+            run = wandb.init(project="CM - Scaling",
                              group=f"{group}_{n_samples}",
-                             # group=f"{group}_{n_samples}_boost_all_+_max_not_in_forward",
-                             # group=f"{group}_{n_samples}_scale_y_by_5_nobp_wsi",
-                             # group=f"{group}_{n_samples}_temp_{config['attention_temperature']}_oval_bp_otrain_max",
-                             # group=f"{group}_boost_positives_oval_20_temp_{config['attention_temperature']}_nobp",
-                             # group=f"{group}_boost_pos_lp_hn_wLRS@>0.7_to-5"
                              reinit=True)  # , tags=config["tag"])
             run.name = f"results_idx_{str(seed)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
 
@@ -274,8 +278,11 @@ if __name__ == '__main__':
             model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
                            attention_network=attention_network,
                            output_network=output_network,
-                           consider_seq_counts=True, consider_seq_counts_after_cnn=False, n_input_features=20,
-                           add_positional_information=True, training_mode=True, consider_seq_counts_after_att=False,
+                           consider_seq_counts=config["consider_seq_counts"],
+                           consider_seq_counts_after_cnn=config["consider_seq_counts_after_cnn"], n_input_features=20,
+                           add_positional_information=True, training_mode=True,
+                           consider_seq_counts_after_att=config["consider_seq_counts_after_att"],
+                           consider_seq_counts_after_softmax=config["consider_seq_counts_after_softmax"],
                            sequence_reduction_fraction=config["sequence_reduction_fraction"],
                            reduction_mb_size=config["reduction_mb_size"], device=device,
                            forced_attention=config["forced_attention"], force_pos_in_attention=fpa,
