@@ -95,8 +95,8 @@ class Logger():
         """
         print("Logging stats:")
         for dl_name, dl in self.dataloaders.items():
-            if not dl.batch_sampler.sampler.data_source.indices.any():
-                continue
+            # if not dl.batch_sampler.sampler.data_source.indices.any():
+            #     continue
             if dl_name != desired_dl_name:
                 continue
             split_logits, split_attentions, split_rep_embs = self.get_values_per_dl(model, dl, device=device)
