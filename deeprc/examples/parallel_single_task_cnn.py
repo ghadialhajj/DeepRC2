@@ -55,7 +55,7 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:1"  # + str(int((args.ideal + args.idx)%2))
+device_name = "cuda:0"  # + str(int((args.ideal + args.idx)%2))
 with_test = False
 device = torch.device(device_name)
 
@@ -65,12 +65,12 @@ root_dir = "/storage/ghadia/DeepRC2/deeprc"
 dataset_type = "all_observed10"
 base_results_dir = "/results/singletask_cnn/ideal"
 strategies = ["PDRC"]  # , "TE", "TASTE" "TASTER", "FG",  "T-SAFTE"]
-dataset = "n_600_wr_0.150%_po_20%"  # "n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
+dataset = "n_600_wr_0.150%_po_20%_mini"  # "n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
 
 config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.3,
           "dataset": dataset, "pos_weight": 100, "Branch": "Simulated_data",
-          "dataset_type": dataset_type, "max_factor": 30, "consider_sequence_count": True}
+          "dataset_type": dataset_type, "max_factor": 150, "consider_sequence_count": True}
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
 
 task_definition = TaskDefinition(targets=[
@@ -137,7 +137,7 @@ for seed in seeds:
 
     torch.manual_seed(seed)
     np.random.seed(seed)
-
+    group = f"Delete_pre_scaling_no_boosting_{group}"  # f"_post_scaling_with_boosting"
     run = wandb.init(project="Simulation", group=group, reinit=True)
     run.name = f"results_idx_{str(seed)}"
 
