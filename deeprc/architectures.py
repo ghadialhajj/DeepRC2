@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 import torch.jit as jit
 from typing import List
+from deeprc.utils import get_boundaries
 
 
 # TODO: correct datatypes of added attributes
@@ -430,9 +431,13 @@ class DeepRC(nn.Module):
         predictions: torch.Tensor
             Prediction for bags of shape (n_samples, n_outputs)
         """
+        factor = inputs_flat[0, 0, :20][torch.nonzero(inputs_flat[0, 0, :20])].flatten()
+        original_inputs_flat = inputs_flat.clone()  # / factor
+
         # Get sequence embedding h() for all bags in mb (shape: (d_k, d_v))
-        mb_emb_seqs = self.sequence_embedding(inputs_flat,
+        mb_emb_seqs = self.sequence_embedding(original_inputs_flat,
                                               sequence_lengths=sequence_lengths_flat).to(dtype=torch.float32)
+        get_boundaries(mb_emb_seqs, sequence_labels_flat)
 
         # Calculate attention weights f() before softmax function for all bags in mb (shape: (d_k, 1))
         if self.forced_attention:
@@ -451,7 +456,7 @@ class DeepRC(nn.Module):
             # Calculate attention activations (softmax over n_sequences_per_bag) (shape: (n_sequences_per_bag, 1))
             attention_weights = torch.softmax(attention_weights, dim=0)
             # Apply attention weights to sequence features (shape: (n_sequences_per_bag, d_v))
-            emb_reps_after_attention = emb_seqs * attention_weights
+            emb_reps_after_attention = emb_seqs * attention_weights  # * factor
             # Compute weighted sum over sequence features after attention (format: (d_v,))
             mb_emb_reps_after_attention.append(emb_reps_after_attention.sum(dim=0))
             start_i += n_seqs
@@ -547,7 +552,7 @@ class DeepRC(nn.Module):
                     device=self.device,
                     dtype=self.embedding_dtype)
                 sequence_labels_mb = sequence_labels[
-                                      mb_i * self.reduction_mb_size:(mb_i + 1) * self.reduction_mb_size].to(
+                                     mb_i * self.reduction_mb_size:(mb_i + 1) * self.reduction_mb_size].to(
                     device=self.device, dtype=torch.long)
 
                 sequence_lengths_mb = sequence_lengths[
