@@ -68,7 +68,7 @@ class SequenceEmbeddingCNN(nn.Module):
 
         self.network = torch.nn.Sequential(*network)
 
-    def forward(self, inputs, *args, **kwargs):
+    def forward(self, inputs, labels, *args, **kwargs):
         """Apply sequence embedding CNN to inputs in NLC format.
         
         Parameters
@@ -86,6 +86,8 @@ class SequenceEmbeddingCNN(nn.Module):
         conv_acts = self.network(inputs)
         # Take maximum over sequence positions (-> 1 output per kernel per sequence)
         max_conv_acts, _ = conv_acts.max(dim=-1)
+        if labels is not None:
+            max_conv_acts = torch.cat([max_conv_acts, labels.unsqueeze(1)], dim=-1)
         return max_conv_acts
 
 
@@ -256,7 +258,7 @@ class DeepRC(nn.Module):
                  sequence_embedding_as_16_bit: bool = True,
                  consider_seq_counts: bool = False, add_positional_information: bool = True,
                  sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
-                 device: torch.device = torch.device('cuda:0'), forced_attention: bool = True):
+                 device: torch.device = torch.device('cuda:0'), forced_attention: bool = True, cat_at: str = "MP"):
         """DeepRC network as described in paper
         
         Apply `.reduce_and_stack_minibatch()` to reduce number of sequences by `sequence_reduction_fraction`
@@ -309,6 +311,7 @@ class DeepRC(nn.Module):
         self.sequence_reduction_fraction = sequence_reduction_fraction
         self.reduction_mb_size = int(reduction_mb_size)
         self.forced_attention = forced_attention
+        self.cat_at = cat_at
 
         # sequence embedding network (h())
         if sequence_embedding_as_16_bit:
@@ -436,8 +439,11 @@ class DeepRC(nn.Module):
 
         # Get sequence embedding h() for all bags in mb (shape: (d_k, d_v))
         mb_emb_seqs = self.sequence_embedding(original_inputs_flat,
-                                              sequence_lengths=sequence_lengths_flat).to(dtype=torch.float32)
-        get_boundaries(mb_emb_seqs, sequence_labels_flat)
+                                              sequence_lengths=sequence_lengths_flat,
+                                              labels=sequence_labels_flat if self.cat_at == "MP" else None).to(
+            dtype=torch.float32)
+        # get_boundaries(mb_emb_seqs[:, :self.sequence_embedding.network[0].weight.shape[0]], sequence_labels_flat,
+        #                emb_type="seq_emb")
 
         # Calculate attention weights f() before softmax function for all bags in mb (shape: (d_k, 1))
         if self.forced_attention:
@@ -456,6 +462,9 @@ class DeepRC(nn.Module):
             # Calculate attention activations (softmax over n_sequences_per_bag) (shape: (n_sequences_per_bag, 1))
             attention_weights = torch.softmax(attention_weights, dim=0)
             # Apply attention weights to sequence features (shape: (n_sequences_per_bag, d_v))
+            if self.cat_at == "WA":
+                labels = sequence_labels_flat[start_i:start_i + n_seqs].unsqueeze(1)
+                emb_seqs = torch.cat([emb_seqs, labels], dim=-1)
             emb_reps_after_attention = emb_seqs * attention_weights  # * factor
             # Compute weighted sum over sequence features after attention (format: (d_v,))
             mb_emb_reps_after_attention.append(emb_reps_after_attention.sum(dim=0))
@@ -560,7 +569,8 @@ class DeepRC(nn.Module):
                     device=self.device, dtype=torch.long)
 
                 # Get sequence embedding (h())
-                emb_seqs = self.sequence_embedding(inputs_mb, sequence_lengths=sequence_lengths_mb).to(
+                emb_seqs = self.sequence_embedding(inputs_mb, sequence_lengths=sequence_lengths_mb,
+                                                   labels=sequence_labels_mb if self.cat_at == "MP" else None).to(
                     dtype=torch.float32)
 
                 # Calculate attention weights before softmax (f())
