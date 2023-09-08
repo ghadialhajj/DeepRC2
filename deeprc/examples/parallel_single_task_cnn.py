@@ -26,16 +26,16 @@ from deeprc.utils import Logger
 #
 parser = argparse.ArgumentParser()
 parser.add_argument('--n_updates', help='Number of updates to train for. Recommended: int(1e5). Default: int(1e3)',
-                    type=int, default=int(6e3))
+                    type=int, default=int(1e4))
 # type=int, default=int(20))
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(1e2))
+                    type=int, default=int(5e2))
 # type=int, default=int(4))
 parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
                                                     'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(1e3))
+                    type=int, default=int(5e2))
 # type=int, default=int(2))
 parser.add_argument('--kernel_size', help='Size of 1D-CNN kernels (=how many sequence characters a CNN kernel spans).'
                                           'Default: 9',
@@ -56,7 +56,7 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 args = parser.parse_args()
 # Set computation device
 device_name = "cuda:0"  # + str(int((args.ideal + args.idx)%2))
-with_test = False
+with_test = True
 device = torch.device(device_name)
 
 seeds = [0, 1, 2]
@@ -64,13 +64,12 @@ seeds = [0, 1, 2]
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
 dataset_type = "all_observed10"
 base_results_dir = "/results/singletask_cnn/ideal"
-strategies = ["PDRC"]  # , "TE", "TASTE" "TASTER", "FG",  "T-SAFTE"]
-dataset = "n_600_wr_0.150%_po_20%_mini"  # "n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
+dataset = "n_600_wr_0.150%_po_20%"  # "n_600_wr_0.050%_po_100%",  "n_600_wr_0.100%_po_100%",
 
 config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.3,
           "dataset": dataset, "pos_weight": 100, "Branch": "Simulated_data",
-          "dataset_type": dataset_type, "max_factor": 150, "consider_sequence_count": True}
+          "dataset_type": dataset_type, "max_factor": None, "consider_sequence_count": True, "cat_at": "NA"}
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
 
 task_definition = TaskDefinition(targets=[
@@ -91,7 +90,6 @@ trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloade
     sample_n_sequences=args.sample_n_sequences,
     sequence_counts_scaling_fn=no_sequence_count_scaling,
     with_test=with_test,
-    split_inds=[[], list(range(10)), list(range(10, 20))],
     max_factor=config["max_factor"],
 )
 dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval}
@@ -128,16 +126,14 @@ for seed in seeds:
         group = f"FG_n_up_{args.n_updates}_pw_{config['pos_weight']}"
         config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": True,
                        "plain_DeepRC": True})
-    elif strategy == "PDRC":
+    else:
         group = f"PDRC_n_up_{args.n_updates}"
         config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                        "plain_DeepRC": True})
-    else:
-        raise "Invalid strategy"
 
     torch.manual_seed(seed)
     np.random.seed(seed)
-    group = f"Delete_pre_scaling_no_boosting_{group}"  # f"_post_scaling_with_boosting"
+    group = f"{group}_CSL_no_boosting"  # f"_post_scaling_with_boosting"
     run = wandb.init(project="Simulation", group=group, reinit=True)
     run.name = f"results_idx_{str(seed)}"
 
@@ -150,9 +146,10 @@ for seed in seeds:
     sequence_embedding_network = SequenceEmbeddingCNN(n_input_features=20 + 3, kernel_size=args.kernel_size,
                                                       n_kernels=args.n_kernels, n_layers=1)
     # Create attention network
-    attention_network = AttentionNetwork(n_input_features=args.n_kernels, n_layers=2, n_units=32)
+    attention_network = AttentionNetwork(n_input_features=args.n_kernels + 1 * (config["cat_at"] == "MP"), n_layers=2,
+                                         n_units=32)
     # Create output network
-    output_network = OutputNetwork(n_input_features=args.n_kernels,
+    output_network = OutputNetwork(n_input_features=args.n_kernels + 1 * (config["cat_at"] in ["MP", "WA"]),
                                    n_output_features=task_definition.get_n_output_features(), n_layers=1,
                                    n_units=32)
     # Combine networks to DeepRC network
@@ -162,7 +159,8 @@ for seed in seeds:
                    n_input_features=20, add_positional_information=True,
                    sequence_reduction_fraction=config["sequence_reduction_fraction"],
                    reduction_mb_size=config["reduction_mb_size"], device=device,
-                   forced_attention=config["forced_attention"]).to(device=device)
+                   forced_attention=config["forced_attention"],
+                   cat_at=config["cat_at"]).to(device=device)
 
     train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
           trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
