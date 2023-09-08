@@ -274,7 +274,7 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
     return all_logits, all_targets, all_attentions, all_seq_targets, all_seq_pools, all_emb_reps
 
 
-def get_boundaries(all_embs, all_targets):
+def get_boundaries(all_embs, all_targets, emb_type="rep"):
     all_angles = torch.stack([get_avg_angle(all_embs[i, :]) for i in range(all_targets.shape[0])])
     all_l1_norms = torch.stack(
         [torch.linalg.vector_norm(all_embs[i, :], ord=1) for i in range(all_targets.shape[0])])
@@ -298,6 +298,7 @@ def get_boundaries(all_embs, all_targets):
     max_neg_ang = torch.max(all_angles[torch.nonzero(1 - all_targets.flatten())])
     min_neg_ang = torch.min(all_angles[torch.nonzero(1 - all_targets.flatten())])
 
+    print(f"Emb type: {emb_type}")
     print(f"min pos angle: {min_pos_ang}, max pos angle: {max_pos_ang}")
     print(f"min neg angle: {min_neg_ang}, max neg angle: {max_neg_ang}")
     print(f"min pos l1_norm: {min_pos_l1_norm}, max pos l1_norm: {max_pos_l1_norm}")
