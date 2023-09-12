@@ -173,13 +173,15 @@ if __name__ == '__main__':
               "dataset": "AIRR", "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "Emerson",
               "dataset_type": "emerson_linz_2", "attention_temperature": 1, "best_pos": None, "best_neg": None,
               "max_factor": 50, "consider_seq_counts": True, "consider_seq_counts_after_cnn": False,
-              "consider_seq_counts_after_att": False, "consider_seq_counts_after_softmax": False}
+              "consider_seq_counts_after_att": False, "consider_seq_counts_after_softmax": False,
+              "add_positional_information": True}
 
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
     # strategy = "TE"
     # strategy = "FG"
     # strategy = "TASTE"
     # strategy = "TASTER"
+    # strategy = "GBM"
     strategy = "PDRC"
     if strategy == "PDRC":
         fpa, fps, wsw, wsi = False, False, False, False
@@ -193,6 +195,10 @@ if __name__ == '__main__':
         n_samples = 480
         cohort = 3
         split_inds = get_split_inds(0, cohort, n_samples, 150, seed)
+        # # Get file for dataset splits
+        # split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_splits.pkl"
+        # with open(split_file, 'rb') as sfh:
+        #     split_inds = pkl.load(sfh)
 
         task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
             BinaryTarget(column_name='CMV', true_class_value='+'),
@@ -211,7 +217,7 @@ if __name__ == '__main__':
             sequence_counts_column="duplicate_count",
             sequence_labels_column='matched',
             sample_n_sequences=args.sample_n_sequences,
-            sequence_counts_scaling_fn=log_sequence_count_scaling,
+            sequence_counts_scaling_fn=plain_log_sequence_count_scaling,
             # if strategy == "PDRC" else log_sequence_count_scaling,
             with_test=with_test,
             split_inds=split_inds,
@@ -228,23 +234,28 @@ if __name__ == '__main__':
         if strategy == "TE":
             group = f"TE_n_up_{args.n_updates}"
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                           "plain_DeepRC": False, "rep_loss_only": False})
+                           "plain_DeepRC": False, "rep_loss_only": False, "mul_att_by_label": False})
         elif strategy == "TASTE":
             group = f"TASTE_n_up_{args.n_updates}_prop_{config['prop']}"
             config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
-                           "plain_DeepRC": False, "rep_loss_only": False})
+                           "plain_DeepRC": False, "rep_loss_only": False, "mul_att_by_label": False})
         elif strategy == "TASTER":
             group = f"TASTER_n_up_{args.n_updates}_prop_{config['prop']}"
             config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
-                           "plain_DeepRC": False, "rep_loss_only": True})
+                           "plain_DeepRC": False, "rep_loss_only": True, "mul_att_by_label": False})
         elif strategy == "FG":
             group = f"FG_n_up_{args.n_updates}"
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": True,
-                           "plain_DeepRC": True, "rep_loss_only": False})
+                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_label": False})
         elif strategy == "PDRC":
             group = f"PDRC_n_up_{args.n_updates}"
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                           "plain_DeepRC": True, "rep_loss_only": False})
+                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_label": False})
+        elif strategy == "GBM":
+            group = f"GBM_n_up_{args.n_updates}"
+            config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
+                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_label": True})
+
         else:
             raise "Invalid strategy"
         try:
@@ -253,7 +264,8 @@ if __name__ == '__main__':
             np.random.seed(seed)
 
             run = wandb.init(project="CM - Scaling",
-                             group=f"{group}_{n_samples}",
+                             # group=f"{group}_{n_samples}",
+                             group=f"Reproduce_PE_{config['add_positional_information']}",
                              reinit=True)  # , tags=config["tag"])
             run.name = f"results_idx_{str(seed)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
 
@@ -267,8 +279,9 @@ if __name__ == '__main__':
                   ", ".join([f"{str(name)}: {len(loader)}" for name, loader in dl_dict.items()]))
 
             # Create sequence embedding network (for CNN, kernel_size and n_kernels are important hyper-parameters)
-            sequence_embedding_network = SequenceEmbeddingCNN(n_input_features=20 + 3, kernel_size=kernel_size,
-                                                              n_kernels=n_kernels, n_layers=1)
+            sequence_embedding_network = SequenceEmbeddingCNN(
+                n_input_features=20 + 3 * config["add_positional_information"], kernel_size=kernel_size,
+                n_kernels=n_kernels, n_layers=1)
             # Create attention network
             attention_network = AttentionNetwork(n_input_features=n_kernels, n_layers=2, n_units=32)
             # Create output network
@@ -280,13 +293,14 @@ if __name__ == '__main__':
                            output_network=output_network,
                            consider_seq_counts=config["consider_seq_counts"],
                            consider_seq_counts_after_cnn=config["consider_seq_counts_after_cnn"], n_input_features=20,
-                           add_positional_information=True, training_mode=True,
+                           add_positional_information=config["add_positional_information"], training_mode=True,
                            consider_seq_counts_after_att=config["consider_seq_counts_after_att"],
                            consider_seq_counts_after_softmax=config["consider_seq_counts_after_softmax"],
                            sequence_reduction_fraction=config["sequence_reduction_fraction"],
                            reduction_mb_size=config["reduction_mb_size"], device=device,
                            forced_attention=config["forced_attention"], force_pos_in_attention=fpa,
-                           temperature=config["attention_temperature"]).to(device=device)
+                           temperature=config["attention_temperature"],
+                           mul_att_by_label=config["mul_att_by_label"]).to(device=device)
 
             max_auc = train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
                             trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
