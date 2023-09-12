@@ -281,7 +281,7 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
         all_seq_counts = torch.cat(all_seq_counts, dim=0)
         all_attentions = torch.cat(all_attentions, dim=0)
         all_seq_targets = torch.cat(all_seq_targets, dim=0)
-        get_boundaries(all_emb_reps, all_targets)
+        # get_boundaries(all_emb_reps, all_targets)
 
     return all_logits, all_targets, all_attentions, all_seq_targets, all_seq_counts, all_emb_reps
 

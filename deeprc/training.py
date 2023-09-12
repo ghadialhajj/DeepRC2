@@ -278,7 +278,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                                       step=update)
 
                     # Calculate scores and loss on training set and validation set
-                    if update % evaluate_at == 0 or update == n_updates or update == 1:
+                    if update % evaluate_at == 0 or update == n_updates:
                         scores, scoring_loss = log_scores(device, early_stopping, early_stopping_target_id, logger,
                                                           model, task_definition, tprint, trainingset_eval_dataloader,
                                                           update, validationset_eval_dataloader)

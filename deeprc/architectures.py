@@ -258,7 +258,8 @@ class DeepRC(nn.Module):
                  consider_seq_counts_after_softmax=False,
                  sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
                  device: torch.device = torch.device('cuda:0'), forced_attention: bool = True,
-                 force_pos_in_attention=True, training_mode: bool = True, temperature: float = 0.01):
+                 force_pos_in_attention=True, training_mode: bool = True, temperature: float = 0.01,
+                 mul_att_by_label: bool = False):
         """DeepRC network as described in paper
         
         Apply `.reduce_and_stack_minibatch()` to reduce number of sequences by `sequence_reduction_fraction`
@@ -317,6 +318,7 @@ class DeepRC(nn.Module):
         self.force_pos_in_attention = force_pos_in_attention
         self.training_mode = training_mode
         self.temperature = temperature
+        self.mul_att_by_label = mul_att_by_label
 
         # sequence embedding network (h())
         if sequence_embedding_as_16_bit:
@@ -462,6 +464,8 @@ class DeepRC(nn.Module):
             emb_seqs = mb_emb_seqs[start_i:start_i + n_seqs]
             if self.consider_seq_counts_after_att:
                 emb_seqs = emb_seqs * sequence_counts[start_i:start_i + n_seqs].reshape(-1, 1)
+            if self.mul_att_by_label:
+                attention_weights = attention_weights * torch.softmax(sequence_labels, 0)
             # Calculate attention activations (softmax over n_sequences_per_bag) (shape: (n_sequences_per_bag, 1))
             # if not is_training:
             # attention_weights = attention_weights / self.get_temp(sequence_labels)
