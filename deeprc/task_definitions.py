@@ -205,13 +205,9 @@ class Sequence_Target(torch.nn.Module):
     def clean_zero_counts(self, list_of_tensors: List[torch.Tensor], indices: torch.Tensor):
         return [tensor[indices] for tensor in list_of_tensors]
 
-    def loss_function2(self, raw_outputs: torch.Tensor, targets: torch.Tensor,
-                       sequence_counts: torch.Tensor) -> torch.Tensor:
-        return F.mse_loss(raw_outputs, targets.float())
-        # return F.binary_cross_entropy_with_logits(raw_outputs, targets, reduction="mean")
-
     def loss_function(self, raw_outputs: torch.Tensor, targets: torch.Tensor,
-                      sequence_counts: torch.Tensor, temperature: float = 0.01) -> torch.Tensor:
+                      sequence_counts: torch.Tensor, n_sequences: List,
+                      temperature: float = 0.01) -> torch.Tensor:
         """Custom loss used for training on this task
 
         Parameters
@@ -228,12 +224,18 @@ class Sequence_Target(torch.nn.Module):
         loss: torch.Tensor
             Loss for this task as torch.Tensor of shape `(n_instances, 1)`.
         """
-        # return self.target_loss(raw_outputs, targets)
-        # TODO: optimize dtypes for minimal memory requirements
-        # sequence_counts = torch.exp(sequence_counts).ceil().float()  # todo use log counts instead
-        # sequence_counts = torch.log(torch.exp(sequence_counts.float()) + torch.tensor(1))
-        # raw_outputs, targets, sequence_counts = self.clean_zero_counts([raw_outputs, targets, sequence_counts],
-        #                                                                sequence_counts.nonzero())
+        loss_before = self.loss_per_rep(raw_outputs, targets, sequence_counts, temperature)
+        # targets_before = targets
+        # print("before: ", self.loss_per_rep(raw_outputs, targets, sequence_counts, temperature))
+        # raw_outputs, targets, sequence_counts = [torch.split(tensor, n_sequences) for tensor in
+        #                                          [raw_outputs, targets, sequence_counts]]
+        # losses = [self.loss_per_rep(raw_outputs[i], targets[i], sequence_counts[i], temperature) for i in
+        #           range(len(n_sequences))]
+        # print("after ", torch.mean(torch.cat(losses)))
+        return loss_before
+
+    def loss_per_rep(self, raw_outputs: torch.Tensor, targets: torch.Tensor, sequence_counts: torch.Tensor,
+                     temperature: float = 0.01) -> torch.Tensor:
         if self.add_in_loss:
             sequence_counts = torch.log1p(torch.exp(sequence_counts.float()))
         if self.weigh_seq_by_weight:
@@ -266,12 +268,6 @@ class Sequence_Target(torch.nn.Module):
         if self.normalize:
             sequence_weights = sequence_weights / sum(sequence_weights) * len(sequence_weights)
 
-        # raw_outputs = torch.divide(raw_outputs, temperature)
-        # loss = F.mse_loss(raw_outputs, targets.float(), reduction="none")
-        # loss = loss * sequence_weights
-        # loss = loss / torch.sum(loss)
-        # loss = torch.sum(loss)
-        # targets = targets * 0.5 + 0.2
         loss = F.binary_cross_entropy_with_logits(raw_outputs, targets, weight=sequence_weights,
                                                   reduction="mean")
         # loss = torch.sum(loss)/torch.count_nonzero(loss)
@@ -310,7 +306,8 @@ class Sequence_Target(torch.nn.Module):
         bacc = metrics.balanced_accuracy_score(y_true=labels, y_pred=predictions_thresholded)
         f1 = metrics.f1_score(y_true=labels, y_pred=predictions_thresholded, average='binary', pos_label=1)
         loss = self.loss_function(raw_outputs=raw_outputs, targets=targets,
-                                  sequence_counts=sequence_counts).detach().mean().cpu().item()
+                                  sequence_counts=sequence_counts,
+                                  n_sequences=[len(targets)]).detach().mean().cpu().item()
         return dict(pr_auc=pr_auc, seq_roc_auc=roc_auc, seq_bacc=bacc, seq_f1=f1, seq_loss=loss,
                     seq_avg_score_diff=avg_score_diff)
 
@@ -748,9 +745,10 @@ class TaskDefinition(torch.nn.Module):
 
     # Expand to multiple sequence targets, if needed
     def get_sequence_loss(self, raw_attention: torch.Tensor, seq_labels: torch.Tensor, seq_counts: torch.Tensor,
-                          temperature: float = 1):
+                          n_sequences: List, temperature: float = 1):
         return self.__sequence_targets__[0].loss_function(raw_outputs=raw_attention, targets=seq_labels,
-                                                          sequence_counts=seq_counts, temperature=temperature)
+                                                          sequence_counts=seq_counts, n_sequences=n_sequences,
+                                                          temperature=temperature)
 
     def get_loss(self, raw_outputs: torch.Tensor, targets: torch.Tensor, ignore_missing_target_values: bool = True) \
             -> torch.Tensor:
