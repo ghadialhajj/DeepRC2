@@ -219,10 +219,12 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         with torch.no_grad():
                             attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(),
                                                                                sequence_labels, sequence_counts,
+                                                                               n_sequences.tolist(),
                                                                                model.temperature)
                     else:
                         attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(), sequence_labels,
-                                                                           sequence_counts, model.temperature)
+                                                                           sequence_counts, n_sequences.tolist(),
+                                                                           model.temperature)
                     if plain_DeepRC:
                         loss = pred_loss + l1reg_loss * l1_weight_decay
                     else:
