@@ -482,6 +482,7 @@ class RepertoireDataset(Dataset):
                 pos_seq_inds = \
                     np.nonzero(
                         sampledata['sequence_labels'][sample_sequences_start_end[0]:sample_sequences_start_end[1]])[0]
+                pos_seq_inds = [i + sample_sequences_start_end[0] for i in pos_seq_inds]
                 sample_sequence_inds = list(set(sample_sequence_inds).union(pos_seq_inds))
             assert len(sample_sequence_inds) >= old_size
             if self.sampledata is None:
