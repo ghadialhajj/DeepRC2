@@ -71,7 +71,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
           num_torch_threads: int = 4, learning_rate: float = 1e-4, l1_weight_decay: float = 0,
           l2_weight_decay: float = 0, log_training_stats_at: int = int(1e2), evaluate_at: int = int(5e3),
           ignore_missing_target_values: bool = True, prop: float = 0.7, train_then_freeze: bool = True,
-          staged_training: bool = True, plain_DeepRC: bool = False, log: bool = True, rep_loss_only=False):
+          staged_training: bool = True, plain_DeepRC: bool = False, log: bool = True, rep_loss_only=False,
+          config: dict = {}, loss_config: dict = {}):
     """Train a DeepRC model on a given dataset on tasks specified in `task_definition`
      
      Model with lowest validation set loss on target `early_stopping_target_id` will be taken as final model (=early
@@ -140,6 +141,9 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
     # Print all outputs to logfile and terminal
     tee_print = TeePrint(logfile)
     tprint = tee_print.tee_print
+    # pring the config file entries inside the log file
+    [tprint(f"{val[0]}: {val[1]}") for val in config.items()]
+    [tprint(f"{val[0]}: {val[1]}") for val in loss_config.items()]
 
     try:
         # Set up PyTorch and numpy random seeds
@@ -201,15 +205,14 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                                 targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence)
                     # Reset gradients
                     optimizer.zero_grad()
-
+                    assert model.training_mode, "Model is not in training mode!"
                     # Calculate predictions from reduced sequences,
                     logit_outputs, attention_outputs, _ = model(inputs_flat=inputs,
                                                                 sequence_lengths_flat=sequence_lengths,
                                                                 n_sequences_per_bag=n_sequences,
                                                                 sequence_counts=sequence_counts,
                                                                 sequence_attentions=sequence_attentions,
-                                                                sequence_labels=sequence_labels,
-                                                                is_training=True)
+                                                                sequence_labels=sequence_labels)
 
                     # Calculate losses
                     pred_loss = task_definition.get_loss(raw_outputs=logit_outputs, targets=targets,
@@ -331,6 +334,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
 def log_scores(device, early_stopping, early_stopping_target_id, logger, model, task_definition, tprint,
                trainingset_eval_dataloader, update, validationset_eval_dataloader):
+    model.training_mode = False
     print("  Calculating training score...")
     scores, sequence_scores = evaluate(model=model,
                                        dataloader=trainingset_eval_dataloader,
@@ -345,9 +349,8 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
     for task_id, task_scores in sequence_scores.items():
         [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
          for score_name, score in task_scores.items()]
-    logger.log_stats(model, step=update, log_and_att_hists=True, device=device,
-                     desired_dl_name="trainingset_eval")
-    model.training_mode = False
+    # logger.log_stats(model, step=update, log_and_att_hists=True, device=device,
+    #                  desired_dl_name="trainingset_eval")
     print("  Calculating validation score...")
     scores, sequence_scores = evaluate(model=model, dataloader=validationset_eval_dataloader,
                                        task_definition=task_definition, device=device)
@@ -364,7 +367,7 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
     for task_id, task_scores in sequence_scores.items():
         [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
          for score_name, score in task_scores.items()]
-    logger.log_stats(model, step=update, log_and_att_hists=True, device=device,
-                     desired_dl_name="validationset_eval")
+    # logger.log_stats(model, step=update, log_and_att_hists=True, device=device,
+    #                  desired_dl_name="validationset_eval")
     model.training_mode = True
     return scores, scoring_loss
