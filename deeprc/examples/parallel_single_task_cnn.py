@@ -28,16 +28,16 @@ from deeprc.training import ESException
 #
 parser = argparse.ArgumentParser()
 parser.add_argument('--n_updates', help='Number of updates to train for. Recommended: int(1e5). Default: int(1e3)',
-                    type=int, default=int(5e4))
+                    type=int, default=int(4e4))
 # type=int, default=int(100))
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(500))
+                    type=int, default=int(5e2))
 # type=int, default=int(10))
 parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
                                                     'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(100))
+                    type=int, default=int(1e2))
 parser.add_argument('--sample_n_sequences', help='Number of instances to reduce repertoires to during training via'
                                                  'random dropout. This should be less than the number of instances per '
                                                  'repertoire. Only applied during training, not for evaluation. '
@@ -167,34 +167,35 @@ def get_original_inds():
 
 
 if __name__ == '__main__':
-    loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": True}
+    loss_config = {"min_cnt": 2, "normalize": False, "add_in_loss": False}
     config = {"sequence_reduction_fraction": 0.01, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.2,
               "dataset": "AIRR", "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "Emerson",
               "dataset_type": "emerson_linz_2", "attention_temperature": 1, "best_pos": None, "best_neg": None,
-              "max_factor": 50, "consider_seq_counts": True, "consider_seq_counts_after_cnn": False,
+              # emerson_linz_2 has proper sequence labels
+              "max_factor": 30, "consider_seq_counts": True, "consider_seq_counts_after_cnn": False,
               "consider_seq_counts_after_att": False, "consider_seq_counts_after_softmax": False,
-              "add_positional_information": True}
+              "add_positional_information": True, "per_for_tmp": 0}
 
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
-    # strategy = "TE"
+    strategy = "TE"
     # strategy = "FG"
     # strategy = "TASTE"
     # strategy = "TASTER"
     # strategy = "GBM"
-    strategy = "PDRC"
+    # strategy = "PDRC"
     if strategy == "PDRC":
         fpa, fps, wsw, wsi = False, False, False, False
     else:
-        fpa, fps, wsw, wsi = True, True, False, "old"  # True, True
+        fpa, fps, wsw, wsi = True, True, True, "old"  # True, True
 
     max_aucs = []
     seeds_list = [0, 1, 2]
     for seed in seeds_list:
         n_kernels, kernel_size = 32, 9
-        n_samples = 480
-        cohort = 3
-        split_inds = get_split_inds(0, cohort, n_samples, 150, seed)
+        n_samples = 70
+        cohort = 2
+        split_inds = get_split_inds(0, cohort, n_samples, 50, seed)
         # # Get file for dataset splits
         # split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_splits.pkl"
         # with open(split_file, 'rb') as sfh:
@@ -217,7 +218,7 @@ if __name__ == '__main__':
             sequence_counts_column="duplicate_count",
             sequence_labels_column='matched',
             sample_n_sequences=args.sample_n_sequences,
-            sequence_counts_scaling_fn=plain_log_sequence_count_scaling,
+            sequence_counts_scaling_fn=log_sequence_count_scaling,
             # if strategy == "PDRC" else log_sequence_count_scaling,
             with_test=with_test,
             split_inds=split_inds,
@@ -244,7 +245,7 @@ if __name__ == '__main__':
             config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
                            "plain_DeepRC": False, "rep_loss_only": True, "mul_att_by_label": False})
         elif strategy == "FG":
-            group = f"FG_n_up_{args.n_updates}"
+            group = f"FG_n_up_{args.n_updates}_pft_{config['per_for_tmp']}"
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": True,
                            "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_label": False})
         elif strategy == "PDRC":
@@ -255,7 +256,6 @@ if __name__ == '__main__':
             group = f"GBM_n_up_{args.n_updates}"
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                            "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_label": True})
-
         else:
             raise "Invalid strategy"
         try:
@@ -263,9 +263,9 @@ if __name__ == '__main__':
             torch.manual_seed(seed)
             np.random.seed(seed)
 
-            run = wandb.init(project="CM - Scaling",
-                             # group=f"{group}_{n_samples}",
-                             group=f"Reproduce_PE_{config['add_positional_information']}",
+            run = wandb.init(project="CM - Scaling - Cohort 2",
+                             group=f"{group}_{n_samples}",
+                             # group=f"Reproduce_PE_{config['add_positional_information']}_random",
                              reinit=True)  # , tags=config["tag"])
             run.name = f"results_idx_{str(seed)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
 
@@ -299,8 +299,8 @@ if __name__ == '__main__':
                            sequence_reduction_fraction=config["sequence_reduction_fraction"],
                            reduction_mb_size=config["reduction_mb_size"], device=device,
                            forced_attention=config["forced_attention"], force_pos_in_attention=fpa,
-                           temperature=config["attention_temperature"],
-                           mul_att_by_label=config["mul_att_by_label"]).to(device=device)
+                           temperature=config["attention_temperature"], mul_att_by_label=config["mul_att_by_label"],
+                           per_for_tmp=config["per_for_tmp"]).to(device=device)
 
             max_auc = train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
                             trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
@@ -309,7 +309,8 @@ if __name__ == '__main__':
                             results_directory=f"{root_dir}{results_dir}", prop=config["prop"],
                             log_training_stats_at=args.log_training_stats_at,
                             train_then_freeze=config["train_then_freeze"], staged_training=config["staged_training"],
-                            plain_DeepRC=config["plain_DeepRC"], log=True, rep_loss_only=config["rep_loss_only"])
+                            plain_DeepRC=config["plain_DeepRC"], log=True, rep_loss_only=config["rep_loss_only"],
+                            config=config, loss_config=loss_config)
 
             # logger.log_stats(model=model, device=device, step=args.n_updates)
             max_aucs.append(max_auc)
