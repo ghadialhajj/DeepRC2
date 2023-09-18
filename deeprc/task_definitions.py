@@ -262,7 +262,7 @@ class Sequence_Target(torch.nn.Module):
         if torch.all(torch.isnan(candidate_weights)):
             sequence_weights = torch.ones_like(sequence_weights)
         elif torch.any(torch.isinf(candidate_weights)):
-            candidate_weights[mask] *= self.pos_weight
+            sequence_weights[mask] *= self.pos_weight
         else:
             sequence_weights = candidate_weights
         if self.normalize:
