@@ -30,6 +30,16 @@ def compute_position_features(max_seq_len, sequence_lengths, dtype=np.float16):
     return sequences
 
 
+def compute_position_features2(max_seq_len, sequence_lengths, dtype=np.float16):
+    """Compute position features for sequences of lengths `sequence_lengths`, given the maximum sequence length
+    `max_seq_len`.
+    """
+    print("went through compute_position_features2")
+    sequences = np.random.rand(max_seq_len + 1, max_seq_len, 3).astype(dtype)
+    sequences /= np.sum(sequences, axis=2, keepdims=True)
+    return sequences
+
+
 class SequenceEmbeddingCNN(nn.Module):
     def __init__(self, n_input_features: int, kernel_size: int = 9, n_kernels: int = 32, n_layers: int = 1):
         """Sequence embedding using 1D-CNN (`h()` in paper)
@@ -259,7 +269,7 @@ class DeepRC(nn.Module):
                  sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
                  device: torch.device = torch.device('cuda:0'), forced_attention: bool = True,
                  force_pos_in_attention=True, training_mode: bool = True, temperature: float = 0.01,
-                 mul_att_by_label: bool = False):
+                 mul_att_by_label: bool = False, per_for_tmp: float = 0.75):
         """DeepRC network as described in paper
         
         Apply `.reduce_and_stack_minibatch()` to reduce number of sequences by `sequence_reduction_fraction`
@@ -318,6 +328,7 @@ class DeepRC(nn.Module):
         self.force_pos_in_attention = force_pos_in_attention
         self.training_mode = training_mode
         self.temperature = temperature
+        self.per_for_tmp = per_for_tmp
         self.mul_att_by_label = mul_att_by_label
 
         # sequence embedding network (h())
@@ -390,6 +401,7 @@ class DeepRC(nn.Module):
             sequence_counts = [t.to(self.device) for t in sequence_counts]
             sequence_labels = [t.to(self.device) for t in sequence_labels]
 
+            # TODO: potentially optimize using parallelization
             # Compute features (turn into 1-hot sequences and add position features)
             inputs_list = [
                 self.__compute_features__(sequence_of_indices, sequence_lengths, max_mb_seq_len, counts_per_sequence)
@@ -416,7 +428,7 @@ class DeepRC(nn.Module):
             mb_reduced_sequence_labels, mb_n_sequences, mb_reduced_sequence_attentions
 
     def forward(self, inputs_flat, sequence_lengths_flat, n_sequences_per_bag,
-                sequence_counts, sequence_labels, sequence_attentions, is_training: bool = False):
+                sequence_counts, sequence_labels, sequence_attentions):
         """ Apply DeepRC (see Fig.2 in paper)
         
         Parameters
@@ -467,8 +479,8 @@ class DeepRC(nn.Module):
             if self.mul_att_by_label:
                 attention_weights = attention_weights * torch.softmax(sequence_labels, 0)
             # Calculate attention activations (softmax over n_sequences_per_bag) (shape: (n_sequences_per_bag, 1))
-            # if not is_training:
-            # attention_weights = attention_weights / self.get_temp(sequence_labels)
+            if not self.training_mode:
+                attention_weights = attention_weights / self.get_temp(sequence_labels)   # self.temperature
             attention_weights = torch.softmax(attention_weights, dim=0)
             if self.consider_seq_counts_after_softmax:
                 attention_weights = attention_weights * sequence_counts[start_i:start_i + n_seqs].reshape(-1, 1)
@@ -487,9 +499,13 @@ class DeepRC(nn.Module):
         return predictions, mb_attention_weights, emb_reps_after_attention
 
     def get_temp(self, labels):
-        desired_per = 0.9
-        num_pos = torch.sum(labels)
-        temp = 1 / torch.log(desired_per * (len(labels) - num_pos) / num_pos / (1 - desired_per))
+        assert not (self.temperature != 0 and self.per_for_tmp != 0), ("temperature and per_for_tmp cannot be set at "
+                                                                       "the same time")
+        if self.temperature != 0:
+            temp = self.temperature
+        elif self.per_for_tmp != 0:
+            num_pos = torch.sum(labels)
+            temp = 1 / torch.log(self.per_for_tmp * (len(labels) - num_pos) / num_pos / (1 - self.per_for_tmp))
         return temp
 
     def __compute_features__(self, sequence_char_indices, sequence_lengths, max_mb_seq_len, counts_per_sequence):
@@ -519,6 +535,8 @@ class DeepRC(nn.Module):
         features_one_hot_padded[:, :sequence_char_indices.shape[1], :] = features_one_hot
         # Scale by sequence counts
         if self.consider_seq_counts:
+            # scale the first 15 dimensions of the third dimension of features_one_hot_padded by counts_per_sequence
+            # features_one_hot_padded[:, :, :15] = features_one_hot_padded[:, :, :15] * counts_per_sequence[:, None, None]
             features_one_hot_padded = features_one_hot_padded * counts_per_sequence[:, None, None]
         # Add position information
         if self.add_positional_information:
