@@ -69,7 +69,8 @@ dataset = "n_600_wr_0.150%_po_20%"  # "n_600_wr_0.050%_po_100%",  "n_600_wr_0.10
 config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.3,
           "dataset": dataset, "pos_weight": 100, "Branch": "Simulated_data",
-          "dataset_type": dataset_type, "max_factor": None, "consider_sequence_count": True, "cat_at": "NA"}
+          "dataset_type": dataset_type, "max_factor": 10, "consider_sequence_count": True, "cat_at": "NA",
+          "add_positional_information": False}
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
 
 task_definition = TaskDefinition(targets=[
@@ -133,8 +134,8 @@ for seed in seeds:
 
     torch.manual_seed(seed)
     np.random.seed(seed)
-    group = f"{group}_CSL_no_boosting"  # f"_post_scaling_with_boosting"
-    run = wandb.init(project="Simulation", group=group, reinit=True)
+    group = f"{group}_PE_{config['add_positional_information']}_:15"  # f"_post_scaling_with_boosting"
+    run = wandb.init(project="Simulation", group=group, tags=["rep_w_results_all_w_boosting"], reinit=True)
     run.name = f"results_idx_{str(seed)}"
 
     wandb.config.update(args)
@@ -143,8 +144,9 @@ for seed in seeds:
     print("Dataloaders with lengths: ", ", ".join([f"{str(name)}: {len(loader)}" for name, loader in dl_dict.items()]))
 
     # Create sequence embedding network (for CNN, kernel_size and n_kernels are important hyper-parameters)
-    sequence_embedding_network = SequenceEmbeddingCNN(n_input_features=20 + 3, kernel_size=args.kernel_size,
-                                                      n_kernels=args.n_kernels, n_layers=1)
+    sequence_embedding_network = SequenceEmbeddingCNN(n_input_features=20 + 3 * config["add_positional_information"],
+                                                      kernel_size=args.kernel_size, n_kernels=args.n_kernels,
+                                                      n_layers=1)
     # Create attention network
     attention_network = AttentionNetwork(n_input_features=args.n_kernels + 1 * (config["cat_at"] == "MP"), n_layers=2,
                                          n_units=32)
@@ -156,7 +158,7 @@ for seed in seeds:
     model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
                    attention_network=attention_network,
                    output_network=output_network, consider_seq_counts=config["consider_sequence_count"],
-                   n_input_features=20, add_positional_information=True,
+                   n_input_features=20, add_positional_information=config["add_positional_information"],
                    sequence_reduction_fraction=config["sequence_reduction_fraction"],
                    reduction_mb_size=config["reduction_mb_size"], device=device,
                    forced_attention=config["forced_attention"],

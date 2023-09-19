@@ -51,14 +51,14 @@ def no_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, ma
         Scaled sequence counts as numpy array.
     """
     scaled_counts = np.maximum(seq_counts, 0)
-    # sum_pos = np.dot(scaled_counts, seq_labels)
-    # sum_neg = np.dot(scaled_counts, 1 - seq_labels)
-    # factor = sum_neg / sum_pos if sum_pos != 0 else 1
-    # factor = np.minimum(factor, max_factor)
-    # if factor != 1:
-    #     indices_to_change = seq_labels == 1
-    #     scaled_counts[indices_to_change] *= factor
-    #     print(factor)
+    sum_pos = np.dot(scaled_counts, seq_labels)
+    sum_neg = np.dot(scaled_counts, 1 - seq_labels)
+    factor = sum_neg / sum_pos if sum_pos != 0 else 1
+    factor = np.minimum(factor, max_factor)
+    if factor != 1:
+        indices_to_change = seq_labels == 1
+        scaled_counts[indices_to_change] *= factor
+        print(factor)
     return scaled_counts
 
 
