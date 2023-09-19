@@ -31,6 +31,16 @@ def compute_position_features(max_seq_len, sequence_lengths, dtype=np.float16):
     return sequences
 
 
+def compute_position_features2(max_seq_len, sequence_lengths, dtype=np.float16):
+    """Compute position features for sequences of lengths `sequence_lengths`, given the maximum sequence length
+    `max_seq_len`.
+    """
+    print("went through compute_position_features2")
+    sequences = np.random.rand(max_seq_len + 1, max_seq_len, 3).astype(dtype)
+    sequences /= np.sum(sequences, axis=2, keepdims=True)
+    return sequences
+
+
 class SequenceEmbeddingCNN(nn.Module):
     def __init__(self, n_input_features: int, kernel_size: int = 9, n_kernels: int = 32, n_layers: int = 1):
         """Sequence embedding using 1D-CNN (`h()` in paper)
@@ -504,7 +514,9 @@ class DeepRC(nn.Module):
         features_one_hot_padded[:, :sequence_char_indices.shape[1], :] = features_one_hot
         # Scale by sequence counts
         if self.consider_seq_counts:
-            features_one_hot_padded = features_one_hot_padded * counts_per_sequence[:, None, None]
+            # scale the first 15 dimensions of the third dimension of features_one_hot_padded by counts_per_sequence
+            features_one_hot_padded[:, :, :15] = features_one_hot_padded[:, :, :15] * counts_per_sequence[:, None, None]
+            # features_one_hot_padded = features_one_hot_padded * counts_per_sequence[:, None, None]
         # Add position information
         if self.add_positional_information:
             features_one_hot_padded[:, :sequence_char_indices.shape[1], -3:] = \
