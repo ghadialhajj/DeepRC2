@@ -206,7 +206,7 @@ class Sequence_Target(torch.nn.Module):
         return [tensor[indices] for tensor in list_of_tensors]
 
     def loss_function(self, raw_outputs: torch.Tensor, targets: torch.Tensor,
-                      sequence_counts: torch.Tensor, n_sequences: List,
+                      sequence_counts: torch.Tensor, n_sequences: torch.Tensor,
                       temperature: float = 0.01) -> torch.Tensor:
         """Custom loss used for training on this task
 
@@ -227,7 +227,7 @@ class Sequence_Target(torch.nn.Module):
         loss_before = self.loss_per_rep(raw_outputs, targets, sequence_counts, temperature)
         # targets_before = targets
         # print("before: ", self.loss_per_rep(raw_outputs, targets, sequence_counts, temperature))
-        # raw_outputs, targets, sequence_counts = [torch.split(tensor, n_sequences) for tensor in
+        # raw_outputs, targets, sequence_counts = [torch.split(tensor, n_sequences.tolist()) for tensor in
         #                                          [raw_outputs, targets, sequence_counts]]
         # losses = [self.loss_per_rep(raw_outputs[i], targets[i], sequence_counts[i], temperature) for i in
         #           range(len(n_sequences))]
@@ -239,7 +239,7 @@ class Sequence_Target(torch.nn.Module):
         if self.add_in_loss:
             sequence_counts = torch.log1p(torch.exp(sequence_counts.float()))
         if self.weigh_seq_by_weight:
-            sequence_weights = sequence_counts / torch.sum(sequence_counts)
+            sequence_weights = sequence_counts.float() / torch.sum(sequence_counts.float())
             sequence_weights *= len(sequence_counts)
 
             # if torch.sum(sequence_counts) == 0:
@@ -270,10 +270,26 @@ class Sequence_Target(torch.nn.Module):
 
         loss = F.binary_cross_entropy_with_logits(raw_outputs, targets, weight=sequence_weights,
                                                   reduction="mean")
+        if torch.isnan(loss).any():
+            print(f"nan loss")
+            print(f"torch.any(torch.isnan(sequence_counts)): {torch.any(torch.isnan(sequence_counts))}")
+            print(f"torch.any(torch.isnan(sequence_weights)): {torch.any(torch.isnan(sequence_weights))}")
+            print(f"torch.any(torch.isnan(candidate_weights)): {torch.any(torch.isnan(candidate_weights))}")
+            print(f"torch.any(torch.isnan(raw_outputs)): {torch.any(torch.isnan(raw_outputs))}")
+
+        if torch.isinf(loss).any():
+            print(f"inf loss")
+            print(f"torch.sum(weights): {torch.sum(sequence_weights)}")
+            print(f"torch.any(torch.isinf(sequence_counts)): {torch.any(torch.isinf(sequence_counts))}")
+            print(f"torch.any(torch.isinf(sequence_weights)): {torch.any(torch.isinf(sequence_weights))}")
+            print(f"torch.any(torch.isinf(candidate_weights)): {torch.any(torch.isinf(candidate_weights))}")
+            print(f"torch.any(torch.isinf(raw_outputs)): {torch.any(torch.isinf(raw_outputs))}")
+
         # loss = torch.sum(loss)/torch.count_nonzero(loss)
         return loss
 
-    def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor, sequence_counts: torch.Tensor) -> dict:
+    def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor, sequence_counts: torch.Tensor,
+                   n_sequences: torch.Tensor) -> dict:
         """Get scores for this task as dictionary containing AUC, BACC, F1, and loss
 
         Parameters
@@ -307,8 +323,11 @@ class Sequence_Target(torch.nn.Module):
         f1 = metrics.f1_score(y_true=labels, y_pred=predictions_thresholded, average='binary', pos_label=1)
         loss = self.loss_function(raw_outputs=raw_outputs, targets=targets,
                                   sequence_counts=sequence_counts,
-                                  n_sequences=[len(targets)]).detach().mean().cpu().item()
-        return dict(pr_auc=pr_auc, seq_roc_auc=roc_auc, seq_bacc=bacc, seq_f1=f1, seq_loss=loss,
+                                  n_sequences=n_sequences).detach().mean().cpu().item()
+        sm_raw_outputs = torch.softmax(raw_outputs, dim=-1)
+        pos_percentage = torch.sum(sm_raw_outputs[targets == 1]) / torch.sum(sm_raw_outputs)
+        # todo: report percentage
+        return dict(seq_pr_auc=pr_auc, seq_roc_auc=roc_auc, seq_bacc=bacc, seq_f1=f1, seq_loss=loss,
                     seq_avg_score_diff=avg_score_diff)
 
     def get_id(self) -> str:
@@ -430,12 +449,13 @@ class BinaryTarget(Target):
         labels = targets.detach().cpu().numpy()
         labels = labels[..., 0]
         predictions_thresholded = predictions_thresholded[..., 0]
+        pr_auc = metrics.average_precision_score(y_true=labels, y_score=predictions, average=None)
         roc_auc = metrics.roc_auc_score(y_true=labels, y_score=predictions, average=None)
         bacc = metrics.balanced_accuracy_score(y_true=labels, y_pred=predictions_thresholded)
         f1 = metrics.f1_score(y_true=labels, y_pred=predictions_thresholded, average='binary',
                               pos_label=1)
         loss = self.loss_function(raw_outputs=raw_outputs, targets=targets).detach().mean().cpu().item()
-        return dict(roc_auc=roc_auc, bacc=bacc, f1=f1, loss=loss)
+        return dict(pr_auc=pr_auc, roc_auc=roc_auc, bacc=bacc, f1=f1, loss=loss)
 
 
 class MulticlassTarget(Target):
