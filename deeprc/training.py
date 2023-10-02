@@ -51,14 +51,15 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
         See `deeprc/examples/` for examples.
     """
     with torch.no_grad():
-        all_logits, all_targets, all_attentions, all_seq_targets, all_seq_counts, *_ = get_outputs(model, dataloader,
+        all_logits, all_targets, all_attentions, all_seq_targets, all_seq_counts, all_n_sequences, *_ = get_outputs(model, dataloader,
                                                                                                    show_progress,
                                                                                                    device)
 
         scores = task_definition.get_scores(raw_outputs=all_logits, targets=all_targets)
         sequence_scores = task_definition.get_sequence_scores(raw_attentions=all_attentions.squeeze(),
                                                               sequence_targets=all_seq_targets,
-                                                              sequence_counts=all_seq_counts)
+                                                              sequence_counts=all_seq_counts,
+                                                              n_sequences=all_n_sequences)
 
         return scores, sequence_scores
 
@@ -222,11 +223,11 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         with torch.no_grad():
                             attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(),
                                                                                sequence_labels, sequence_counts,
-                                                                               n_sequences.tolist(),
+                                                                               n_sequences,
                                                                                model.temperature)
                     else:
                         attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(), sequence_labels,
-                                                                           sequence_counts, n_sequences.tolist(),
+                                                                           sequence_counts, n_sequences,
                                                                            model.temperature)
                     if plain_DeepRC:
                         loss = pred_loss + l1reg_loss * l1_weight_decay
@@ -259,7 +260,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                             # group = 'training/'
                             # # Loop through tasks and add losses to tensorboard
                             # pred_losses = task_definition.get_losses(raw_outputs=logit_outputs, targets=targets)
-                            # pred_losses = pred_losses.mean(dim=1)  # shape: (n_tasks, n_samples, 1) -> (n_tasks, 1)
+                            # pred_losses = pred_losses.mean(dim=1)  # shape: (n_tasks, tr_samples, 1) -> (n_tasks, 1)
                             # for task_id, task_loss in zip(task_definition.get_task_ids(), pred_losses):
                             #     wandb.log({f"{group}{task_id}_loss": task_loss}, step=update)  # loss per target
                             # # wandb.log({f"{group}total_task_loss": pred_loss}, step=update)  # sum losses over targets
@@ -316,6 +317,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
             saver_loader.save_to_file(filename=f'lastsave_u{update}.tar.gzip')
             state.update(saver_loader.load_from_ram())  # load best model so far
             saver_loader.save_to_file(filename=f'best_u{state["update"]}.tar.gzip')
+            model.training_mode = False
             print('Finished Training!')
             # if log:
             #     logger.log_stats(model=model, device=device, step=n_updates, log_and_att_hists=True,
