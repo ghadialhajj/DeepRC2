@@ -22,6 +22,7 @@ from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from time import time
 import logomaker
+import dill as pkl
 
 
 class Timer(object):
@@ -149,7 +150,7 @@ class Logger():
         scores: dict
             Nested dictionary of format `{task_id: {score_id: score_value}}`, e.g.
         """
-        all_logits, all_targets, all_attentions, all_seq_targets, all_seq_counts, all_emb_reps = get_outputs(
+        all_logits, all_targets, all_attentions, all_seq_targets, all_seq_counts, all_n_sequences, all_emb_reps = get_outputs(
             model=model,
             dataloader=dataloader,
             device=device,
@@ -248,6 +249,7 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
         all_attentions = []
         all_seq_targets = []
         all_seq_counts = []
+        all_n_sequences = []
         all_sample_ids = []
         for scoring_data in tqdm(dataloader, total=len(dataloader), desc="Evaluating model", disable=not show_progress):
             # Get samples as lists
@@ -271,6 +273,7 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
             all_emb_reps.append(emb_reps_after_attention.detach())
             all_targets.append(targets.detach())
             all_seq_counts.append(sequence_counts.detach())
+            all_n_sequences.append(n_sequences.detach())
             all_attentions.append(attention_outputs.detach())
             all_seq_targets.append(sequence_labels.detach())
         # Compute scores
@@ -278,11 +281,12 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
         all_emb_reps = torch.cat(all_emb_reps, dim=0)
         all_targets = torch.cat(all_targets, dim=0)
         all_seq_counts = torch.cat(all_seq_counts, dim=0)
+        all_n_sequences = torch.cat(all_n_sequences, dim=0)
         all_attentions = torch.cat(all_attentions, dim=0)
         all_seq_targets = torch.cat(all_seq_targets, dim=0)
         # get_boundaries(all_emb_reps, all_targets)
 
-    return all_logits, all_targets, all_attentions, all_seq_targets, all_seq_counts, all_emb_reps
+    return all_logits, all_targets, all_attentions, all_seq_targets, all_seq_counts, all_n_sequences, all_emb_reps
 
 
 def get_boundaries(all_embs, all_targets):
@@ -369,6 +373,134 @@ def plot_motifs(motif_matrix, num_aas: int = 3, kernel_size: int = 5):
     crp_logo.ax.xaxis.set_tick_params(pad=-1)
     crp_logo.ax.set_ylim([0, 15])
     return crp_logo.fig
+
+
+def get_split_inds(n_folds, cohort, n_tr, n_v, n_te, seed):
+    assert n_tr + n_v + n_te <= 120, "Too many samples requested"
+    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_separate_test_correct.pkl"
+    with open(split_file, 'rb') as sfh:
+        split_inds = pkl.load(sfh)["inds"]
+    if cohort == 2:
+        split_inds = split_inds[-1]
+    elif cohort == 1:
+        split_inds = split_inds[:-1]
+        split_inds = [a for b in split_inds for a in b]
+    else:
+        split_inds = [a for b in split_inds for a in b]
+    np.random.seed(seed)
+    np.random.shuffle(split_inds)
+    # split_inds = [split_inds[i * int(len(split_inds) / n_folds): (i + 1) * int(len(split_inds) / n_folds)] for i in
+    #               range(n_folds)]
+    train_split_inds = split_inds[:n_tr]
+    val_split_inds = split_inds[n_tr: n_tr + n_v]
+    test_split_inds = split_inds[n_tr + n_v: n_tr + n_v + n_te]
+    return [test_split_inds, train_split_inds, val_split_inds]
+
+
+def get_correct_indices(seed):
+    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_separate_test_correct.pkl"
+    with open(split_file, 'rb') as sfh:
+        split_inds = pkl.load(sfh)["inds"]
+    test_split_inds = list(split_inds[-1])
+    split_inds = split_inds[:-1]
+    split_inds = [a for b in split_inds for a in b]
+
+    np.random.seed(seed)
+    np.random.shuffle(split_inds)
+    folds = 4
+    split_inds = [split_inds[i * int(len(split_inds) / folds): (i + 1) * int(len(split_inds) / folds)] for i in
+                  range(folds)]
+    train_split_inds = split_inds[:3]
+    val_split_inds = split_inds[3]
+    return [test_split_inds, *train_split_inds, val_split_inds]
+
+
+def get_cherry_picked_inds(cohort: int = 1, n_t: int = 30, n_v: int = 160, best_pos: bool = True,
+                           best_neg: bool = True):
+    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_separate_test_correct.pkl"
+    with open(split_file, 'rb') as sfh:
+        split_inds = pkl.load(sfh)["inds"]
+        train_split_inds = []
+        if cohort == 2:
+            split_inds = split_inds[-1]
+            # Perfect indices: High for pos, low for neg
+            # train_split_inds = [731, 704, 753, 762, 730, 715, 686, 691, 758, 703, 710, 669, 709, 712, 713, 718, 723,
+            #                     728, 683, 687]
+            # High for pos and neg
+            # train_split_inds = [731, 704, 753, 762, 730, 715, 686, 691, 758, 703, 772, 692, 700, 705, 706, 734, 666,
+            #                     696, 750, 754]
+            # Low for pos and High for neg
+            # train_split_inds = [697, 680, 720, 708, 732, 768, 773, 745, 748, 749, 772, 692, 700, 705, 706, 734, 666,
+            #                     696, 750, 754]
+            # Low for pos and for neg
+            # train_split_inds = [697, 680, 720, 708, 732, 768, 773, 745, 748, 749, 710, 669, 709, 712, 713, 718, 723,
+            #                     728, 683, 687]
+            positive = [779, 756, 746, 744, 774, 721, 737, 724, 719, 765, 729, 783, 781, 773, 740, 696, 754, 671, 697,
+                        768, 760, 668, 741, 755, 687, 682, 673, 718, 717, 782, 763, 677, 690, 753, 748, 708, 716, 732,
+                        704, 726, 699, 714, 707, 723, 679, 772, 665, 731, 739, 694, 752]
+
+            negative = [734, 747, 778, 759, 749, 693, 758, 745, 775, 735, 761, 685, 769, 725, 757, 751, 713, 736, 715,
+                        733, 777, 720, 722, 701, 750, 728, 730, 712, 669, 706, 705, 703, 695, 764, 738, 689, 684, 770,
+                        743, 678, 672, 666, 784, 762, 766, 767, 771, 776, 780, 688, 667, 670, 674, 675, 676, 680, 681,
+                        683, 686, 742, 691, 692, 698, 700, 702, 709, 710, 711, 727]
+
+        elif cohort == 1:
+            split_inds = split_inds[:-1]
+            split_inds = [a for b in split_inds for a in b]
+            positive = [307, 161, 473, 208, 236, 343, 508, 386, 28, 551, 231, 215, 233, 213, 542, 63, 528, 283, 235,
+                        415, 290, 462, 380, 648, 295, 568, 658, 664, 437, 83, 164, 168, 596, 26, 399, 35, 111, 650, 418,
+                        94, 326, 287, 306, 285, 172, 641, 554, 11, 34, 105, 15, 87, 126, 237, 574, 495, 144, 260, 385,
+                        67, 409, 222, 467, 365, 254, 275, 362, 345, 459, 268, 55, 299, 464, 518, 604, 185, 108, 615, 54,
+                        25, 639, 524, 463, 396, 192, 81, 112, 361, 581, 656, 57, 494, 229, 557, 273, 546, 389, 412, 378,
+                        419, 424, 586, 321, 649, 127, 265, 88, 196, 489, 247, 174, 477, 152, 342, 301, 86, 141, 68, 188,
+                        328, 398, 182, 522, 202, 391, 388, 527, 445, 417, 513, 349, 82, 2, 427, 241, 240, 334, 250, 189,
+                        223, 123, 16, 532, 548, 550, 622, 274, 590, 592, 539, 53, 602, 319, 194, 316, 584, 486, 576,
+                        538, 535, 92, 322, 133, 654, 110, 523, 259, 176, 272, 52, 30, 140, 382, 659, 565, 148, 93, 158,
+                        500, 488, 482, 428, 267, 509, 99, 340, 177, 187, 280, 264, 210, 198, 333, 411, 6, 404, 376, 125,
+                        446, 351, 405, 390, 327, 184, 318, 291, 485, 438, 453, 569, 497, 616, 470, 332, 600, 620, 452,
+                        635, 599, 136, 163, 493, 206, 491, 638, 634, 400, 121, 323, 618, 570, 149, 142, 607, 201, 628,
+                        309, 567, 41, 512, 245, 506, 487, 360, 119, 324, 128, 170, 359, 337, 19, 367, 255, 277, 279,
+                        162, 315, 450, 263, 344, 253]
+            negative = [230, 167, 529, 101, 221, 348, 471, 269, 393, 49, 329, 138, 43, 218, 186, 431, 284, 249, 154,
+                        104, 226, 37, 31, 66, 39, 595, 292, 354, 79, 439, 100, 276, 481, 124, 645, 89, 132, 545, 180,
+                        45, 78, 14, 643, 147, 651, 243, 251, 534, 338, 454, 289, 238, 220, 183, 61, 559, 636, 346, 114,
+                        96, 363, 353, 314, 246, 358, 414, 242, 179, 191, 613, 190, 59, 606, 173, 134, 571, 256, 209,
+                        225, 262, 563, 395, 469, 547, 435, 429, 294, 451, 553, 536, 603, 579, 281, 311, 543, 560, 293,
+                        562, 258, 228, 217, 203, 504, 505, 530, 106, 401, 368, 605, 117, 625, 97, 8, 341, 633, 614, 644,
+                        377, 27, 193, 20, 22, 42, 65, 36, 159, 153, 271, 150, 200, 216, 310, 352, 76, 21, 588, 227, 219,
+                        171, 165, 122, 120, 71, 270, 46, 303, 38, 373, 653, 631, 413, 379, 577, 433, 461, 566, 514, 525,
+                        540, 519, 516, 502, 483, 544, 422, 143, 476, 197, 442, 432, 199, 248, 297, 317, 330, 331, 312,
+                        339, 239, 169, 369, 298, 139, 137, 420, 449, 80, 484, 32, 13, 10, 531, 3, 549, 647, 597, 558,
+                        47, 661, 623, 90, 91, 181, 73, 64, 578, 40, 29, 113, 58, 151, 499, 537, 160, 72, 145, 443, 448,
+                        77, 205, 479, 583, 69, 23, 541, 617, 166, 335, 175, 421, 455, 116, 475, 12, 498, 336, 304, 430,
+                        109, 533, 266, 261, 356, 257, 252, 102, 95, 610, 425, 407, 406, 392, 384, 372, 496, 350, 521,
+                        300, 572, 288, 601, 608, 440, 612, 232, 619, 0, 207, 5, 9, 24, 178, 50, 51, 129, 98, 564, 573,
+                        646, 1, 85, 74, 44, 56, 103, 107, 18, 115, 118, 135, 157, 552, 282, 561, 296, 302, 305, 347,
+                        355, 370, 492, 371, 460, 403, 447]
+
+    n_per_class = int(n_t / 2)
+    if best_pos:
+        train_split_inds.extend(positive[:n_per_class])
+    else:
+        train_split_inds.extend(positive[-n_per_class:])
+    if best_neg:
+        train_split_inds.extend(negative[-n_per_class:])
+    else:
+        train_split_inds.extend(negative[:n_per_class])
+    np.random.seed(0)
+    np.random.shuffle(train_split_inds)
+    val_split_inds = [x for x in split_inds if x not in train_split_inds]
+    np.random.shuffle(val_split_inds)
+    val_split_inds = val_split_inds[:n_v]
+    return [[], train_split_inds, val_split_inds]
+
+
+def get_original_inds():
+    # Get file for dataset splits
+    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_splits.pkl"
+    with open(split_file, 'rb') as sfh:
+        split_inds = pkl.load(sfh)
+    return split_inds
 
 
 if __name__ == '__main__':
