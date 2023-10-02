@@ -77,7 +77,7 @@ class SequenceEmbeddingCNN(nn.Module):
 
         self.network = torch.nn.Sequential(*network)
 
-    def forward(self, inputs, *args, **kwargs):
+    def forward(self, inputs, sequence_counts, *args, **kwargs):
         """Apply sequence embedding CNN to inputs in NLC format.
         
         Parameters
@@ -94,6 +94,11 @@ class SequenceEmbeddingCNN(nn.Module):
         # Apply CNN
         conv_acts = self.network(inputs)
         # Take maximum over sequence positions (-> 1 output per kernel per sequence)
+        with torch.no_grad():
+            if sequence_counts is not None:
+                first_half = conv_acts[:, :-5, :].clone()  # Use clone() to avoid inplace operation
+                scaled_first_half = first_half * sequence_counts.view(-1, 1, 1)
+                conv_acts[:, :-5, :] = scaled_first_half
         max_conv_acts, _ = conv_acts.max(dim=-1)
         return max_conv_acts
 
@@ -243,12 +248,12 @@ class OutputNetwork(nn.Module):
         Parameters
         ----------
         inputs: torch.Tensor
-            Torch tensor of shape (n_samples, n_input_features).
+            Torch tensor of shape (tr_samples, n_input_features).
         
         Returns
         ---------
         prediction: torch.Tensor
-            Prediction as tensor of shape (n_samples, n_output_features).
+            Prediction as tensor of shape (tr_samples, n_output_features).
         """
         predictions = self.output_nn(inputs)
         return predictions
@@ -265,7 +270,7 @@ class DeepRC(nn.Module):
                  sequence_embedding_as_16_bit: bool = True,
                  consider_seq_counts: bool = True, consider_seq_counts_after_cnn=False,
                  add_positional_information: bool = True, consider_seq_counts_after_att=False,
-                 consider_seq_counts_after_softmax=False,
+                 consider_seq_counts_after_softmax=False, consider_seq_counts_before_maxpool=False,
                  sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
                  device: torch.device = torch.device('cuda:0'), forced_attention: bool = True,
                  force_pos_in_attention=True, training_mode: bool = True, temperature: float = 0.01,
@@ -321,6 +326,7 @@ class DeepRC(nn.Module):
         self.consider_seq_counts_after_cnn = consider_seq_counts_after_cnn
         self.consider_seq_counts_after_att = consider_seq_counts_after_att
         self.consider_seq_counts_after_softmax = consider_seq_counts_after_softmax
+        self.consider_seq_counts_before_maxpool = consider_seq_counts_before_maxpool
         self.add_positional_information = add_positional_information
         self.sequence_reduction_fraction = sequence_reduction_fraction
         self.reduction_mb_size = int(reduction_mb_size)
@@ -377,21 +383,21 @@ class DeepRC(nn.Module):
         Returns
         ----------
         mb_targets: list of torch.Tensor
-            Labels of bags as tensor of shape (n_samples, n_classes)
+            Labels of bags as tensor of shape (tr_samples, n_classes)
         mb_reduced_inputs: torch.Tensor
             Top `n_sequences*network_config['sequence_reduction_fraction']` important sequences per bag,
-            as tensor of shape (n_samples*n_reduced_sequences, n_input_features, n_sequence_positions),
+            as tensor of shape (tr_samples*n_reduced_sequences, n_input_features, n_sequence_positions),
             where `n_reduced_sequences=n_sequences*network_config['sequence_reduction_fraction']`
         mb_reduced_sequence_lengths: torch.Tensor
             Sequences lengths of `reduced_inputs` per bag as tensor of dtype torch.long and shape
-            (n_samples*n_reduced_sequences,),
+            (tr_samples*n_reduced_sequences,),
             where `n_reduced_sequences=n_sequences*network_config['sequence_reduction_fraction']`
         mb_reduced_sequence_labels: torch.Tensor
             Sequences labels of `reduced_inputs` per bag as tensor of dtype torch.long and shape
-            (n_samples*n_reduced_sequences,),
+            (tr_samples*n_reduced_sequences,),
             where `n_reduced_sequences=n_sequences*network_config['sequence_reduction_fraction']`
         mb_n_sequences: torch.Tensor
-            Number of sequences per bag as tensor of dtype torch.long and shape (n_samples,)
+            Number of sequences per bag as tensor of dtype torch.long and shape (tr_samples,)
         """
         with torch.no_grad():
             # Move tensors to device
@@ -435,27 +441,28 @@ class DeepRC(nn.Module):
         ----------
         inputs_flat: torch.Tensor
             Concatenated bags as input of shape
-            (n_samples*n_sequences_per_bag, n_sequence_positions, n_input_features)
+            (tr_samples*n_sequences_per_bag, n_sequence_positions, n_input_features)
         sequence_lengths_flat: torch.Tensor
             Sequence lengths
-            (n_samples*n_sequences_per_bag, 1)
+            (tr_samples*n_sequences_per_bag, 1)
         sequence_labels_flat: torch.Tensor
             Sequence labels
-            (n_samples*n_sequences_per_bag, 1)            
+            (tr_samples*n_sequences_per_bag, 1)
         n_sequences_per_bag: torch.Tensor
-            Number of sequences per bag as tensor of dtype torch.long and shape (n_samples,)
+            Number of sequences per bag as tensor of dtype torch.long and shape (tr_samples,)
         
         Returns
         ----------
         predictions: torch.Tensor
-            Prediction for bags of shape (n_samples, n_outputs)
+            Prediction for bags of shape (tr_samples, n_outputs)
         """
         # if not is_training:
         #     weights = torch.softmax(sequence_attentions / self.temperature, 0)
         #     inputs_flat = inputs_flat * weights[:, None, None]
         #
         # Get sequence embedding h() for all bags in mb (shape: (d_k, d_v))
-        mb_emb_seqs = self.sequence_embedding(inputs_flat,
+        counts = sequence_counts if self.consider_seq_counts_before_maxpool else None
+        mb_emb_seqs = self.sequence_embedding(inputs_flat, sequence_counts=counts,
                                               sequence_lengths=sequence_lengths_flat).to(dtype=torch.float32)
 
         if self.consider_seq_counts_after_cnn:
@@ -479,8 +486,8 @@ class DeepRC(nn.Module):
             if self.mul_att_by_label:
                 attention_weights = attention_weights * torch.softmax(sequence_labels, 0)
             # Calculate attention activations (softmax over n_sequences_per_bag) (shape: (n_sequences_per_bag, 1))
-            if not self.training_mode:
-                attention_weights = attention_weights / self.get_temp(sequence_labels)   # self.temperature
+            if self.per_for_tmp != 0:  # not self.training_mode and
+                attention_weights = attention_weights  # / self.get_temp(sequence_labels)  # self.temperature
             attention_weights = torch.softmax(attention_weights, dim=0)
             if self.consider_seq_counts_after_softmax:
                 attention_weights = attention_weights * sequence_counts[start_i:start_i + n_seqs].reshape(-1, 1)
@@ -501,11 +508,18 @@ class DeepRC(nn.Module):
     def get_temp(self, labels):
         assert not (self.temperature != 0 and self.per_for_tmp != 0), ("temperature and per_for_tmp cannot be set at "
                                                                        "the same time")
+        if self.temperature == 0 and self.per_for_tmp == 0:
+            return 1
         if self.temperature != 0:
             temp = self.temperature
         elif self.per_for_tmp != 0:
             num_pos = torch.sum(labels)
-            temp = 1 / torch.log(self.per_for_tmp * (len(labels) - num_pos) / num_pos / (1 - self.per_for_tmp))
+            if num_pos == 0:
+                return 1
+            else:
+                temp = 1 / torch.log(self.per_for_tmp * (len(labels) - num_pos) / num_pos / (1 - self.per_for_tmp))
+                if temp == 0:
+                    temp = 1
         return temp
 
     def __compute_features__(self, sequence_char_indices, sequence_lengths, max_mb_seq_len, counts_per_sequence):
@@ -596,9 +610,14 @@ class DeepRC(nn.Module):
                                       mb_i * self.reduction_mb_size:(mb_i + 1) * self.reduction_mb_size].to(
                     device=self.device, dtype=torch.long)
 
+                sequence_counts_mb = sequence_lengths[
+                                     mb_i * self.reduction_mb_size:(mb_i + 1) * self.reduction_mb_size].to(
+                    device=self.device, dtype=torch.long)
+
+                counts = sequence_counts_mb if self.consider_seq_counts_before_maxpool else None
                 # Get sequence embedding (h())
-                emb_seqs = self.sequence_embedding(inputs_mb, sequence_lengths=sequence_lengths_mb).to(
-                    dtype=torch.float32)
+                emb_seqs = self.sequence_embedding(inputs_mb, sequence_counts=counts,
+                                                   sequence_lengths=sequence_lengths_mb).to(dtype=torch.float32)
 
                 # Calculate attention weights before softmax (f())
                 if self.forced_attention:
@@ -613,7 +632,7 @@ class DeepRC(nn.Module):
             _, used_sequences = torch.topk(attention_acts, n_reduced_sequences, dim=0, largest=True, sorted=True)
 
             if self.force_pos_in_attention and self.training_mode:
-                pos_seq_inds = np.nonzero(sequence_labels)[:, 0]
+                pos_seq_inds = torch.nonzero(sequence_labels)[:, 0]
                 used_sequences = list(set(used_sequences.tolist()).union(pos_seq_inds.tolist()))
                 used_sequences = torch.tensor(used_sequences)
 
