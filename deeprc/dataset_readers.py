@@ -19,8 +19,9 @@ from deeprc.dataset_converters import DatasetToHDF5
 from deeprc.task_definitions import TaskDefinition
 
 
-def log_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, min_count: int, is_training: bool,
-                               max_factor: int):
+def log_sequence_count_scaling_with_boosting(seq_counts: np.ndarray, seq_labels: np.ndarray, min_count: int,
+                                             is_training: bool,
+                                             max_factor: int):
     """Scale sequence counts `seq_counts` using a natural element-wise logarithm. Values `< 1` are set to `1`.
     To be used for `deeprc.dataset_readers.make_dataloaders`.
     
@@ -64,6 +65,17 @@ def plain_log_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndar
     return scaled_counts  # np.any(np.isinf(scaled_counts)) or np.any(np.isnan(scaled_counts))
 
 
+def log_sequence_count_scaling_with_positive_increment(seq_counts: np.ndarray, seq_labels: np.ndarray,
+                                                       min_count: int, is_training: bool, max_factor: int):
+    indices_to_change = np.logical_and(seq_labels == 1, seq_counts == 1)
+    if len(indices_to_change):
+        # print(f"Boosted {sum(indices_to_change)} pos with count 1")
+        seq_counts[indices_to_change] += 1
+
+    scaled_counts = np.log(np.maximum(seq_counts, min_count))
+    return scaled_counts
+
+
 def no_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, min_count: int, is_training: bool):
     """No scaling of sequence counts `seq_counts`. Values `< 0` are set to `0`.
     To be used for `deeprc.dataset_readers.make_dataloaders`.
@@ -79,7 +91,6 @@ def no_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, mi
         Scaled sequence counts as numpy array.
     """
     scaled_counts = np.maximum(seq_counts, min_count)
-    scaled_counts /= sum(scaled_counts) * len(scaled_counts)
     return scaled_counts
 
 
@@ -94,7 +105,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                      repertoire_files_column_sep: str = '\t', filename_extension: str = '.tsv', h5py_dict: dict = None,
                      all_sets: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
                      with_test: bool = False, verbose: bool = True, force_pos_in_subsampling=False, min_count: int = 1,
-                     max_factor: int = 1) \
+                     max_factor: int = 1, non_zeros_only: bool = False) \
         -> Tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
     """Get data loaders for a dataset
     
@@ -187,7 +198,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
     try:
         with h5py.File(f"{repertoiresdata_path}.hdf5", 'r') as hf:
             print(f"This is the day we fight {repertoiresdata_path}.hdf5")
-            n_repertoires = hf['metadata']['n_samples'][()]
+            n_repertoires = hf['metadata']['tr_samples'][()]
         hdf5_file = f"{repertoiresdata_path}.hdf5"
     except Exception:
         # Convert to hdf5 container if no hdf5 container was given
@@ -208,7 +219,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                                   h5py_dict=h5py_dict, verbose=verbose)
         converter.save_data_to_file(output_file=hdf5_file, n_workers=n_worker_processes)
         with h5py.File(hdf5_file, 'r') as hf:
-            n_repertoires = hf['metadata']['n_samples'][()]
+            n_repertoires = hf['metadata']['tr_samples'][()]
         if verbose:
             print(f"\tSuccessfully created {hdf5_file}!")
 
@@ -223,7 +234,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                                      keep_in_ram=keep_dataset_in_ram,
                                      sequence_counts_scaling_fn=sequence_counts_scaling_fn,
                                      force_pos_in_subsampling=force_pos_in_subsampling, min_count=min_count,
-                                     max_factor=max_factor)
+                                     max_factor=max_factor, non_zeros_only=non_zeros_only)
     n_samples = len(full_dataset)
     if verbose:
         print(f"\tFound and loaded a total of {n_samples} samples")
@@ -319,7 +330,7 @@ class RepertoireDataset(Dataset):
                  task_definition: TaskDefinition = None,
                  keep_in_ram: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
                  sample_n_sequences: int = None, verbose: bool = True, force_pos_in_subsampling=True,
-                 min_count: int = 1, max_factor: int = 1):
+                 min_count: int = 1, max_factor: int = 1, non_zeros_only: bool = False):
         """PyTorch Dataset class for reading repertoire dataset from metadata file and hdf5 file
         
         See `deeprc.dataset_readers.make_dataloaders` for simple loading of datasets via PyTorch data loader.
@@ -364,6 +375,7 @@ class RepertoireDataset(Dataset):
         self.sequence_counts_scaling_fn = sequence_counts_scaling_fn
         self.metadata_file_column_sep = metadata_file_column_sep
         self.sample_n_sequences = sample_n_sequences
+        self.non_zeros_only = non_zeros_only
         self.sequence_counts_hdf5_key = 'sequence_counts'
         self.sequence_labels_hdf5_key = 'sequence_labels'
         self.sequences_hdf5_key = 'sequences'
@@ -390,7 +402,7 @@ class RepertoireDataset(Dataset):
             self.aas += ''.join(['<', '>', '^'])
             self.n_features = len(self.aas)
             self.stats = str_or_byte_to_str(metadata['stats'][()])
-            self.n_samples = metadata['n_samples'][()]
+            self.n_samples = metadata['tr_samples'][()]
             hdf5_sample_keys = [str_or_byte_to_str(os.path.splitext(k)[0]) for k in metadata['sample_keys'][:]]
 
             # Mapping metadata sample indices -> hdf5 file sample indices
@@ -474,9 +486,24 @@ class RepertoireDataset(Dataset):
                 sampledata = hf['sampledata']
         if sample_n_sequences:
             rnd_gen = np.random.RandomState()  # TODO: Add shared memory integer random seed for dropout
-            sample_sequence_inds = np.unique(rnd_gen.randint(
-                low=sample_sequences_start_end[0], high=sample_sequences_start_end[1],
-                size=sample_n_sequences))
+            if self.non_zeros_only:
+                seq_labels = sampledata['sequence_labels'][
+                    range(sample_sequences_start_end[0], sample_sequences_start_end[1])]
+                raw_counts = sampledata[self.sequence_counts_hdf5_key][
+                    range(sample_sequences_start_end[0], sample_sequences_start_end[1])]
+                counts_per_sequence = \
+                    self.sequence_counts_scaling_fn(
+                        seq_counts=raw_counts, seq_labels=seq_labels, min_count=self.min_count,
+                        is_training=sample_n_sequences is not None, max_factor=self.max_factor)
+                non_zero = np.nonzero(counts_per_sequence)[0] + sample_sequences_start_end[0]
+                sample_sequence_inds = np.unique(rnd_gen.randint(low=0, high=len(non_zero), size=sample_n_sequences))
+                sample_sequence_inds = non_zero[sample_sequence_inds]
+            else:
+                sample_sequence_inds = np.unique(rnd_gen.randint(
+                    low=sample_sequences_start_end[0], high=sample_sequences_start_end[1],
+                    size=sample_n_sequences))
+
+
             old_size = len(sample_sequence_inds)
             if self.force_pos_in_subsampling:
                 pos_seq_inds = \
