@@ -30,7 +30,7 @@ class Sequence_Loss(torch.nn.Module):
         Returns
         ---------
         negative_scores_sum: torch.Tensor
-            Target values of all samples from `dataframe` as np.ndarray of datatype `np.float` and shape
+            Target values of all samples from `dataframe` as np.ndarray of datatype `float` and shape
             `(n_samples, self.n_output_features)`.
         """
         elem_wise_product = torch.mul(raw_score.squeeze(), label)
@@ -74,7 +74,7 @@ class Target(torch.nn.Module):
         Returns
         ---------
         targets: np.ndarray
-            Target values of all samples from `dataframe` as np.ndarray of datatype `np.float` and shape 
+            Target values of all samples from `dataframe` as np.ndarray of datatype `float` and shape 
             `(n_samples, self.n_output_features)`.
         """
         raise NotImplementedError("Please add your own get_targets() method to your Target class")
@@ -385,10 +385,10 @@ class BinaryTarget(Target):
         Returns
         ---------
         targets: np.ndarray
-            Target values of all samples from `dataframe` as np.ndarray of datatype `np.float` and shape 
+            Target values of all samples from `dataframe` as np.ndarray of datatype `float` and shape 
             `(n_samples, 1)`.
         """
-        return np.asarray(self.true_class_value[None] == dataframe[self.column_name].values[:, None], dtype=np.float)
+        return np.asarray(self.true_class_value[None] == dataframe[self.column_name].values[:, None], dtype=float)
 
     def activation_function(self, raw_outputs: torch.Tensor) -> torch.Tensor:
         """Sigmoid activation function to apply to network outputs to create prediction
@@ -492,7 +492,7 @@ class MulticlassTarget(Target):
         self.column_name = column_name
         self.possible_target_values = np.array(possible_target_values)
         if class_weights is None:
-            class_weights = np.ones(shape=(len(self.possible_target_values),), dtype=np.float)
+            class_weights = np.ones(shape=(len(self.possible_target_values),), dtype=float)
         self.__class_weights__ = torch.nn.Parameter(torch.tensor(class_weights, dtype=torch.float), requires_grad=False)
         self.cross_entropy_loss = torch.nn.CrossEntropyLoss(weight=self.__class_weights__, reduction='none')
 
@@ -508,11 +508,11 @@ class MulticlassTarget(Target):
         Returns
         ---------
         targets: np.ndarray
-            Target values of all samples from `dataframe` as np.ndarray of datatype `np.float` and shape
+            Target values of all samples from `dataframe` as np.ndarray of datatype `float` and shape
             `(n_samples, len(self.possible_target_values))`.
         """
         return np.asarray(self.possible_target_values[None, :] == dataframe[self.column_name].values[:, None],
-                          dtype=np.float)
+                          dtype=float)
 
     def activation_function(self, raw_outputs: torch.Tensor) -> torch.Tensor:
         """Softmax activation function to apply to network outputs to create prediction
@@ -597,10 +597,10 @@ class RegressionTarget(Target):
         Returns
         ---------
         targets: np.ndarray
-            Target values of all samples from `dataframe` as np.ndarray of datatype `np.float` and shape
+            Target values of all samples from `dataframe` as np.ndarray of datatype `float` and shape
             `(n_samples, 1)`.
         """
-        return (np.array(dataframe[self.column_name].values[:, None], dtype=np.float)
+        return (np.array(dataframe[self.column_name].values[:, None], dtype=float)
                 - self.normalization_mean) / self.normalization_std
 
     def activation_function(self, raw_outputs: torch.Tensor) -> torch.Tensor:
@@ -718,7 +718,7 @@ class TaskDefinition(torch.nn.Module):
         Returns
         ---------
         targets: np.ndarray
-            Target values of all samples from `dataframe` as np.ndarray of datatype `np.float` and shape
+            Target values of all samples from `dataframe` as np.ndarray of datatype `float` and shape
             `(n_samples, n_target_features)`.
         """
         return np.concatenate([np.asarray(t.get_targets(dataframe), dtype=np.float32)
@@ -849,7 +849,7 @@ class TaskDefinition(torch.nn.Module):
         return scores
 
     def get_sequence_scores(self, raw_attentions: torch.Tensor, sequence_targets: torch.Tensor,
-                            sequence_counts: torch.Tensor) -> dict:
+                            sequence_counts: torch.Tensor, n_sequences) -> dict:
         """Get scores for this task as dictionary
 
         Parameters
@@ -871,5 +871,6 @@ class TaskDefinition(torch.nn.Module):
             See `deeprc/examples/` for examples.
         """
         scores = dict([(t.get_id(), t.get_scores(raw_outputs=raw_attentions, targets=sequence_targets,
-                                                 sequence_counts=sequence_counts)) for t in self.__sequence_targets__])
+                                                 sequence_counts=sequence_counts, n_sequences=n_sequences)) for t in
+                       self.__sequence_targets__])
         return scores
