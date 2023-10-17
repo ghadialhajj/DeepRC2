@@ -198,7 +198,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
     try:
         with h5py.File(f"{repertoiresdata_path}.hdf5", 'r') as hf:
             print(f"This is the day we fight {repertoiresdata_path}.hdf5")
-            n_repertoires = hf['metadata']['tr_samples'][()]
+            n_repertoires = hf['metadata']['n_samples'][()]
         hdf5_file = f"{repertoiresdata_path}.hdf5"
     except Exception:
         # Convert to hdf5 container if no hdf5 container was given
@@ -219,7 +219,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                                   h5py_dict=h5py_dict, verbose=verbose)
         converter.save_data_to_file(output_file=hdf5_file, n_workers=n_worker_processes)
         with h5py.File(hdf5_file, 'r') as hf:
-            n_repertoires = hf['metadata']['tr_samples'][()]
+            n_repertoires = hf['metadata']['n_samples'][()]
         if verbose:
             print(f"\tSuccessfully created {hdf5_file}!")
 
@@ -253,7 +253,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                       shuffled_repertoire_inds[s_i * n_repertoires_per_split:]  # Remaining repertoires to last split
                       for s_i in range(n_splits)]
     else:
-        split_inds = [np.array(split_ind, dtype=np.int) for split_ind in split_inds]
+        split_inds = [np.array(split_ind, dtype=int) for split_ind in split_inds]
 
     if cross_validation_fold >= len(split_inds):
         raise ValueError(f"Demanded `cross_validation_fold` {cross_validation_fold} but only {len(split_inds)} splits "
@@ -402,16 +402,16 @@ class RepertoireDataset(Dataset):
             self.aas += ''.join(['<', '>', '^'])
             self.n_features = len(self.aas)
             self.stats = str_or_byte_to_str(metadata['stats'][()])
-            self.n_samples = metadata['tr_samples'][()]
+            self.n_samples = metadata['n_samples'][()]
             hdf5_sample_keys = [str_or_byte_to_str(os.path.splitext(k)[0]) for k in metadata['sample_keys'][:]]
 
             # Mapping metadata sample indices -> hdf5 file sample indices
-            unfound_samples = np.array([sk not in hdf5_sample_keys for sk in self.sample_keys], dtype=np.bool)
+            unfound_samples = np.array([sk not in hdf5_sample_keys for sk in self.sample_keys], dtype=bool)
             if np.any(unfound_samples):
                 raise KeyError(f"Samples {self.sample_keys[unfound_samples]} "
                                f"could not be found in hdf5 file. Please add the samples and re-create the hdf5 file "
                                f"or remove the sample keys from the used samples of the metadata file.")
-            self.hdf5_inds = np.array([hdf5_sample_keys.index(sk) for sk in self.sample_keys], dtype=np.int)
+            self.hdf5_inds = np.array([hdf5_sample_keys.index(sk) for sk in self.sample_keys], dtype=int)
 
             # Support old hdf5 format and check for missing hdf5 keys
             if self.sequence_counts_hdf5_key not in hf['sampledata'].keys():
@@ -614,7 +614,7 @@ class RepertoireDatasetSubset(Dataset):
             If None, all sequences will be loaded as specified in `dataset`.
             Can be set for individual samples using `sample_n_sequences` parameter of __getitem__() method.
         """
-        self.indices = np.asarray(indices, dtype=np.int)
+        self.indices = np.asarray(indices, dtype=int)
         self.sample_n_sequences = sample_n_sequences
         self.repertoire_reader = dataset
 
