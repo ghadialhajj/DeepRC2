@@ -1291,7 +1291,7 @@ class LogisticMIL(object):
 
                 result_resorted = current_evaluation[2][0].cpu().numpy()
                 if not activations:
-                    result_resorted = result_resorted.round().astype(dtype=np.int32)
+                    result_resorted = result_resorted.round().astype(dtype=int32)
                 result = np.zeros_like(result_resorted)
                 result[self.__indices_test_resort] = result_resorted
                 result = list(result)

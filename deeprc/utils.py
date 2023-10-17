@@ -397,6 +397,20 @@ def get_split_inds(n_folds, cohort, n_tr, n_v, n_te, seed):
     return [test_split_inds, train_split_inds, val_split_inds]
 
 
+def get_splits_new_emerson(n_folds, cohort, n_tr, n_v, n_te, seed):
+    assert n_tr + n_v + n_te <= 120, "Too many samples requested"
+    if cohort == 2:
+        split_inds = np.arange(120)
+    np.random.seed(seed)
+    np.random.shuffle(split_inds)
+    # split_inds = [split_inds[i * int(len(split_inds) / n_folds): (i + 1) * int(len(split_inds) / n_folds)] for i in
+    #               range(n_folds)]
+    train_split_inds = split_inds[:n_tr]
+    val_split_inds = split_inds[n_tr: n_tr + n_v]
+    test_split_inds = split_inds[n_tr + n_v: n_tr + n_v + n_te]
+    return [test_split_inds, train_split_inds, val_split_inds]
+
+
 def get_correct_indices(seed):
     split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_separate_test_correct.pkl"
     with open(split_file, 'rb') as sfh:

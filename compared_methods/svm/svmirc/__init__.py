@@ -606,7 +606,7 @@ class SVMDataReader(object):
 
         # Prepare shared memory and auxiliary variables for Jaccard similarity computation.
         if (kernel is None) or (kernel == SVMDataReader.Kernel.JACCARD):
-            current_sample_bool = sample_kmer_presence[sample_index].astype(np.bool)
+            current_sample_bool = sample_kmer_presence[sample_index].astype(bool)
             current_sample_sum_bool = current_sample_bool.sum()
             jaccard_similarities = np.zeros((sample_kmer_presence_mating.shape[0] - mating_index), dtype=dtype)
 
@@ -625,9 +625,9 @@ class SVMDataReader(object):
 
             # Compute Jaccard similarity between repertoires.
             if (kernel is None) or (kernel == SVMDataReader.Kernel.JACCARD):
-                num_intersecting = sample_kmer_presence_mating[inner_index].astype(np.bool) * current_sample_bool
+                num_intersecting = sample_kmer_presence_mating[inner_index].astype(bool) * current_sample_bool
                 num_intersecting = num_intersecting.sum()
-                num_union = sample_kmer_presence_mating[inner_index].astype(np.bool).sum() + current_sample_sum_bool
+                num_union = sample_kmer_presence_mating[inner_index].astype(bool).sum() + current_sample_sum_bool
                 num_union -= num_intersecting
                 if num_union != 0:
                     jaccard_similarities[resulting_index] = dtype(
@@ -740,7 +740,7 @@ class SVMBaseline(object):
 
         # Draw hyperparameter values of the trial.
         np.random.seed(seed)
-        penalties = list(np.linspace(start=min(penalty), stop=max(penalty), num=trials, dtype=np.float))
+        penalties = list(np.linspace(start=min(penalty), stop=max(penalty), num=trials, dtype=float))
 
         # Perform grid search to optimise hyperparameters.
         for trial in range(trials):
@@ -941,7 +941,7 @@ class SVMBaseline(object):
             if activations:
                 result = svm_module.decision_function(X=kernel_matrix).tolist()
             else:
-                result = np.maximum(0, svm_module.predict(X=kernel_matrix).astype(np.int32)).tolist()
+                result = np.maximum(0, svm_module.predict(X=kernel_matrix).astype(int32)).tolist()
 
             return result, None
 
@@ -955,7 +955,7 @@ class SVMBaseline(object):
             result = svm_module.decision_function(X=kernel_matrix)
             roc_auc = roc_auc_score(y_true=self.__data_reader.target[self.__indices_test], y_score=result)
             if not activations:
-                result = np.maximum(0, svm_module.predict(X=kernel_matrix).astype(np.int32))
+                result = np.maximum(0, svm_module.predict(X=kernel_matrix).astype(int32))
 
             result_resorted = np.zeros_like(result)
             result_resorted[self.__indices_test_resort] = result

@@ -19,7 +19,8 @@ from deeprc.training import train, evaluate
 import wandb
 import os
 import datetime
-from deeprc.utils import Logger, get_split_inds, get_correct_indices, get_cherry_picked_inds, get_original_inds
+from deeprc.utils import Logger, get_split_inds, get_correct_indices, get_cherry_picked_inds, get_original_inds, \
+    get_splits_new_emerson
 from deeprc.training import ESException
 
 #
@@ -60,45 +61,42 @@ if __name__ == '__main__':
     loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": False}
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.02,
-              "dataset": "AIRR", "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "Emerson",
-              "dataset_type": "emerson_linz_2", "attention_temperature": 0, "best_pos": None, "best_neg": None,
+              "dataset": "without_genes", "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "Emerson",
+              "dataset_type": "emerson", "attention_temperature": 0, "best_pos": None, "best_neg": None,
               # emerson_linz_2 has proper sequence labels
-              "max_factor": None, "consider_seq_counts": False, "consider_seq_counts_after_cnn": False,
+              "max_factor": None, "consider_seq_counts": True, "consider_seq_counts_after_cnn": False,
               "consider_seq_counts_after_att": False, "consider_seq_counts_after_softmax": False,
               "consider_seq_counts_before_maxpool": False, "add_positional_information": True, "per_for_tmp": 0.9,
               "non_zeros_only": False}
     # todo: check whether TE performed well after correcting fps, on cohort 2
-    # todo: remove sequences with zero counts and try both DeepRC and the other strategies: DONE
-    # todo: check when the "overfitted" sequence embeddings were not useful for good repertoire representations
     # todo: when scaling with PDRC, I didn't use FPS and FPA. Try with them
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
-    strategy = "TE"
+    # strategy = "TE"
     # strategy = "FG"
     # strategy = "TASTE"
     # strategy = "TASTER"
     # strategy = "GBM"
     # strategy = "TEOR"
-    # strategy = "PDRC"
+    strategy = "PDRC"
     if strategy == "PDRC":
-        fpa, fps, wsw, wsi = False, False, False, False
+        fpa, fps, wsw, wsi = True, True, False, False
         scaling_fn = plain_log_sequence_count_scaling
     else:
-        fpa, fps, wsw, wsi = False, False, False, False  # True, True
+        fpa, fps, wsw, wsi = True, True, False, True  # True, True
         scaling_fn = log_sequence_count_scaling_with_positive_increment
     config.update({"scaling_fn": scaling_fn})
     max_aucs = []
     seeds_list = [0, 1, 2]
     for seed in seeds_list:
         n_kernels, kernel_size = 32, 9
-        tr_samples = 80
-        va_samples = 20
-        te_samples = 20
+        tr_samples, va_samples, te_samples = 80, 20, 20
         cohort = 2
-        split_inds = get_split_inds(0, cohort, tr_samples, va_samples, te_samples, seed)
+        split_inds = get_splits_new_emerson(0, cohort, tr_samples, va_samples, te_samples, seed)
+        # split_inds = get_split_inds(0, cohort, tr_samples, va_samples, te_samples, seed)
         # split_inds = get_correct_indices(seed)
 
         task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
-            BinaryTarget(column_name='CMV', true_class_value='+'),
+            BinaryTarget(column_name='CMV', true_class_value='True'),
             Sequence_Target(pos_weight=config["pos_weight_seq"], weigh_seq_by_weight=wsw, weigh_pos_by_inverse=wsi,
                             normalize=loss_config["normalize"], add_in_loss=loss_config["add_in_loss"],
                             device=device), ]).to(device=device)
@@ -172,7 +170,7 @@ if __name__ == '__main__':
             np.random.seed(seed)
 
             # run = wandb.init(project="Correct Matching - All",
-            run = wandb.init(project="Correct Matching - Cohort 2",
+            run = wandb.init(project="New Emerson - Cohort 2",
                              group=f"{group}",
                              # group=f"Reproduce_PE_{config['add_positional_information']}_random",
                              reinit=True)  # , tags=config["tag"])
