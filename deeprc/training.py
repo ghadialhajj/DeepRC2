@@ -370,7 +370,7 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
     for task_id, task_scores in sequence_scores.items():
         [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
          for score_name, score in task_scores.items()]
-    # logger.log_stats(model, step=update, log_and_att_hists=True, device=device,
-    #                  desired_dl_name="validationset_eval")
+    logger.log_stats(model, step=update, att_hists=True, device=device,
+                     desired_dl_name="validationset_eval")
     model.training_mode = True
     return scores, scoring_loss
