@@ -89,7 +89,7 @@ class Logger():
             plt.close(fig)
 
     def log_stats(self, model: torch.nn.Module, device=torch.device('cuda:0'), step: int = 0,
-                  log_and_att_hists: bool = False, log_per_kernel: bool = False,
+                  att_hists: bool = False, log_per_kernel: bool = False, logit_hist: bool = False,
                   desired_dl_name: str = "trainingset_eval"):
         """
         Logs model statistics including repertoire embeddings, logits, and attentions for each dataloader.
@@ -104,11 +104,12 @@ class Logger():
             split_rep_embs_pca = perform_pca(split_rep_embs)
             # split_rep_embs_tsne = perform_tsne(split_rep_embs)
             self.log_repertoire_rep(dl_name, split_rep_embs_pca, None, step)
-            if log_and_att_hists:
-                # self.log_logits(dl_name, split_logits, step)
+            if att_hists:
                 self.log_attention(dl_name, split_attentions, step)
-                # if log_per_kernel and dl_name == "validationset_eval":
-                #     self.log_per_kernel(split_rep_embs)
+            if logit_hist:
+                self.log_logits(dl_name, split_logits, step)
+            if log_per_kernel and dl_name == "validationset_eval":
+                self.log_per_kernel(split_rep_embs)
 
     def log_repertoire_rep(self, dl_name, split_rep_embs_pca, split_rep_embs_tsne, step):
         self.plot_scatter(pos_vals=split_rep_embs_pca[0], neg_vals=split_rep_embs_pca[1], dl_name=dl_name,
@@ -117,12 +118,8 @@ class Logger():
         #                   plot_title=f"Positive (B) and Negative (R) TSNEcomp", step=step, method="TSNE")
 
     def log_attention(self, dl_name, split_attentions, step):
-        data = {"observed": split_attentions[0],
-                "unobserved": split_attentions[1], "negative": split_attentions[2]}
-        if self.with_FPs:
-            data.update({"false_positives": split_attentions[3]})
-        self.plot_histogram(data, dl_name=dl_name,
-                            plot_title=f"Positive (B) and Negative (R) Raw Att", xaxis_title="Attention value",
+        self.plot_histogram(split_attentions, dl_name=dl_name,
+                            plot_title=f"Raw Attention", xaxis_title="Attention value",
                             step=step)
 
     def log_logits(self, dl_name, split_logits, step):
@@ -150,11 +147,8 @@ class Logger():
         scores: dict
             Nested dictionary of format `{task_id: {score_id: score_value}}`, e.g.
         """
-        all_logits, all_targets, all_attentions, all_seq_targets, all_seq_counts, all_n_sequences, all_emb_reps = get_outputs(
-            model=model,
-            dataloader=dataloader,
-            device=device,
-            show_progress=show_progress)
+        (all_logits, all_targets, all_attentions, all_seq_targets, all_seq_pools, all_seq_counts, all_n_sequences,
+         all_emb_reps) = get_outputs(model=model,dataloader=dataloader,device=device,show_progress=show_progress)
         split_logits = self.split_outputs(all_logits, all_targets)
         split_attentions = self.split_outputs(all_attentions, all_seq_targets, sequence_level=True)
         split_rep_embs = self.split_outputs(all_emb_reps, all_targets, flatten=False)
@@ -209,14 +203,11 @@ class Logger():
         all_values = all_values.detach().cpu()
         all_targets = all_targets.flatten().detach().cpu()
         if sequence_level:
-            observed = all_values[np.where(all_targets == 0)[0]].detach().cpu().numpy().flatten().tolist()
-            not_observed = all_values[np.where(all_targets == 1)[0]].detach().cpu().numpy().flatten().tolist()
-            negative = all_values[np.where(all_targets == 2)[0]].detach().cpu().numpy().flatten().tolist()
-            if not self.with_FPs:
-                return observed, not_observed, negative
-            else:
-                false_positives = all_values[np.where(all_targets == 3)[0]].detach().cpu().numpy().flatten().tolist()
-            return observed, not_observed, negative, false_positives
+            TP = all_values[np.where(all_targets == "TP")[0]].detach().cpu().numpy().flatten().tolist()
+            TN = all_values[np.where(all_targets == "TN")[0]].detach().cpu().numpy().flatten().tolist()
+            FN = all_values[np.where(all_targets == "FN")[0]].detach().cpu().numpy().flatten().tolist()
+            FP = all_values[np.where(all_targets == "FP")[0]].detach().cpu().numpy().flatten().tolist()
+            return {"TP": TP, "TN": TN, "FN": FN, "FP": FP}
 
         else:
             pos_vals = all_values[np.where(all_targets)[0]].detach().cpu().numpy()
@@ -248,16 +239,17 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
         all_targets = []
         all_attentions = []
         all_seq_targets = []
+        all_seq_pools = []
         all_seq_counts = []
         all_n_sequences = []
         all_sample_ids = []
         for scoring_data in tqdm(dataloader, total=len(dataloader), desc="Evaluating model", disable=not show_progress):
             # Get samples as lists
-            targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, sample_ids = scoring_data
+            targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence, sample_ids = scoring_data
 
             # Apply attention-based sequence reduction and create minibatch
-            targets, inputs, sequence_lengths, sequence_counts, sequence_labels, n_sequences, sequence_attentions = model.reduce_and_stack_minibatch(
-                targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence)
+            targets, inputs, sequence_lengths, sequence_counts, sequence_labels, sequence_pools, n_sequences, sequence_attentions = model.reduce_and_stack_minibatch(
+                targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence)
 
             # Compute predictions from reduced sequences
             raw_outputs, attention_outputs, emb_reps_after_attention = model(inputs_flat=inputs,
@@ -276,6 +268,7 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
             all_n_sequences.append(n_sequences.detach())
             all_attentions.append(attention_outputs.detach())
             all_seq_targets.append(sequence_labels.detach())
+            all_seq_pools.append(sequence_pools.detach())
         # Compute scores
         all_logits = torch.cat(all_logits, dim=0)
         all_emb_reps = torch.cat(all_emb_reps, dim=0)
