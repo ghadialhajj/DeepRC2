@@ -50,7 +50,7 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:0"
+device_name = "cuda:1"
 with_test = True
 device = torch.device(device_name)
 
@@ -61,67 +61,62 @@ if __name__ == '__main__':
     loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": False}
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.02,
-              "dataset": "without_genes", "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "Emerson",
-              "dataset_type": "emerson", "attention_temperature": 0, "best_pos": None, "best_neg": None,
-              # emerson_linz_2 has proper sequence labels
-              "max_factor": None, "consider_seq_counts": True, "consider_seq_counts_after_cnn": False,
+              "dataset": "phenotype_burden_40", "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "HIV",
+              "dataset_type": "HIV", "attention_temperature": 0, "best_pos": None, "best_neg": None,
+              "max_factor": None, "consider_seq_counts": False, "consider_seq_counts_after_cnn": False,
               "consider_seq_counts_after_att": False, "consider_seq_counts_after_softmax": False,
               "consider_seq_counts_before_maxpool": False, "add_positional_information": True, "per_for_tmp": 0.9,
-              "non_zeros_only": False}
+              "non_zeros_only": False, "used_sequence_labels": "is_signal_50%"}
     # todo: check whether TE performed well after correcting fps, on cohort 2
     # todo: when scaling with PDRC, I didn't use FPS and FPA. Try with them
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
-    # strategy = "TE"
+    strategy = "TE"
     # strategy = "FG"
     # strategy = "TASTE"
     # strategy = "TASTER"
-    # strategy = "GBM"
-    # strategy = "TEOR"
-    strategy = "PDRC"
-    if strategy == "PDRC":
-        fpa, fps, wsw, wsi = True, True, False, False
-        scaling_fn = plain_log_sequence_count_scaling
-    else:
-        fpa, fps, wsw, wsi = True, True, False, True  # True, True
-        scaling_fn = log_sequence_count_scaling_with_positive_increment
+    # strategy = "PDRC"
+    # if strategy == "PDRC":
+    fpa, fps, wsw, wsi = False, False, False, False
+    scaling_fn = plain_log_sequence_count_scaling
+    # else:
+    #     fpa, fps, wsw, wsi = True, True, False, True  # True, True
+    #     scaling_fn = log_sequence_count_scaling_with_positive_increment
     config.update({"scaling_fn": scaling_fn})
     max_aucs = []
     seeds_list = [0, 1, 2]
     for seed in seeds_list:
         n_kernels, kernel_size = 32, 9
-        tr_samples, va_samples, te_samples = 80, 20, 20
-        cohort = 2
-        split_inds = get_splits_new_emerson(0, cohort, tr_samples, va_samples, te_samples, seed)
-        # split_inds = get_split_inds(0, cohort, tr_samples, va_samples, te_samples, seed)
-        # split_inds = get_correct_indices(seed)
-
         task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
-            BinaryTarget(column_name='CMV', true_class_value='True'),
+            BinaryTarget(column_name='label_positive', true_class_value='True'),
             Sequence_Target(pos_weight=config["pos_weight_seq"], weigh_seq_by_weight=wsw, weigh_pos_by_inverse=wsi,
                             normalize=loss_config["normalize"], add_in_loss=loss_config["add_in_loss"],
                             device=device), ]).to(device=device)
         #
         trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
             task_definition=task_definition,
-            metadata_file=f"{root_dir}/datasets/{config['dataset_type']}/{config['dataset']}/metadata.csv",
+            metadata_file=f"{root_dir}/datasets/{config['dataset_type']}/{config['dataset']}/data/metadata.csv",
             metadata_file_column_sep=",",
             n_worker_processes=4,
-            repertoiresdata_path=f"{root_dir}/datasets/{config['dataset_type']}/{config['dataset']}/repertoires",
+            repertoiresdata_path=f"{root_dir}/datasets/{config['dataset_type']}/{config['dataset']}/data/simulated_repertoires",
             metadata_file_id_column='filename',
             sequence_column='cdr3_aa',
-            sequence_counts_column="duplicate_count",
-            sequence_labels_column='matched',
+            sequence_labels_columns=["is_signal_5_0.15", "is_signal_5_0.3", "is_signal_10_0.15", "is_signal_10_0.3",
+                                     "is_signal_20_0.15", "is_signal_20_0.3", "is_signal_50_0.15", "is_signal_50_0.3",
+                                     "is_signal_100_0.15", "is_signal_100_0.3"],
+            sequence_pools_columns=["is_signal_5_0.15_pool", "is_signal_5_0.3_pool", "is_signal_10_0.15_pool",
+                                    "is_signal_10_0.3_pool", "is_signal_20_0.15_pool", "is_signal_20_0.3_pool",
+                                    "is_signal_50_0.15_pool", "is_signal_50_0.3_pool", "is_signal_100_0.15_pool",
+                                    "is_signal_100_0.3_pool"],
+            used_sequence_labels_column=config["used_sequence_labels"],
             sample_n_sequences=args.sample_n_sequences,
+            sequence_counts_column=None,
             sequence_counts_scaling_fn=config["scaling_fn"],
-            # if strategy == "PDRC" else log_sequence_count_scaling,
-            non_zeros_only=config["non_zeros_only"],  # False if strategy == "PDRC" else True,
+            non_zeros_only=config["non_zeros_only"],
             with_test=with_test,
-            split_inds=split_inds,
             force_pos_in_subsampling=fps,
             min_count=loss_config["min_cnt"],
             max_factor=config["max_factor"]
         )
-
         dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval}
         if with_test:
             dl_dict.update({"testset_eval": testset_eval})
@@ -170,7 +165,7 @@ if __name__ == '__main__':
             np.random.seed(seed)
 
             # run = wandb.init(project="Correct Matching - All",
-            run = wandb.init(project="New Emerson - Cohort 2",
+            run = wandb.init(project="HIV",
                              group=f"{group}",
                              # group=f"Reproduce_PE_{config['add_positional_information']}_random",
                              reinit=True)  # , tags=config["tag"])
@@ -180,9 +175,8 @@ if __name__ == '__main__':
             wandb.config.update(config)
             wandb.config.update(loss_config)
             wandb.config.update(
-                {"fpa": fpa, "fps": fps, "wsw": wsw, "wsi": wsi, "tr_samples": tr_samples, "va_samples": va_samples,
-                 "te_samples": te_samples})
-            wandb.config.update({"n_kernels": n_kernels, "kernel_size": kernel_size, "cohort": cohort})
+                {"fpa": fpa, "fps": fps, "wsw": wsw, "wsi": wsi})
+            wandb.config.update({"n_kernels": n_kernels, "kernel_size": kernel_size})
 
             print("Dataloaders with lengths: ",
                   ", ".join([f"{str(name)}: {len(loader)}" for name, loader in dl_dict.items()]))
@@ -213,7 +207,7 @@ if __name__ == '__main__':
 
             max_auc = train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
                             trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
-                            early_stopping_target_id='CMV', validationset_eval_dataloader=validationset_eval,
+                            early_stopping_target_id='label_positive', validationset_eval_dataloader=validationset_eval,
                             logger=logger, n_updates=args.n_updates, evaluate_at=args.evaluate_at, device=device,
                             results_directory=f"{root_dir}{results_dir}", prop=config["prop"],
                             log_training_stats_at=args.log_training_stats_at,
@@ -231,7 +225,7 @@ if __name__ == '__main__':
                 scores, sequence_scores = evaluate(model=model, dataloader=testset_eval,
                                                    task_definition=task_definition,
                                                    device=device)
-                wandb.run.summary.update(scores["CMV"])
+                wandb.run.summary.update(scores["label_positive"])
                 wandb.run.summary.update(sequence_scores["sequence_class"])
                 print(f"Test scores:\n{scores}")
             wandb.finish()
