@@ -20,7 +20,8 @@ import multiprocessing
 
 class DatasetToHDF5(object):
     def __init__(self, repertoiresdata_directory: str, sequence_column: str = 'amino_acid',
-                 sequence_counts_column: str = 'templates', sequence_labels_column: str = 'label',
+                 sequence_counts_column: str = 'templates', sequence_labels_columns: list = None,
+                 sequence_pools_columns: list = None,
                  column_sep: str = '\t', filename_extension: str = '.tsv',
                  sequence_characters: tuple =
                  ('A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y'),
@@ -86,10 +87,13 @@ class DatasetToHDF5(object):
         >>> converter.save_data_to_file(output_file=output_file, n_workers=n_worker_processes)
         >>> print("  Done!")
         """
+        if sequence_labels_columns is None:
+            sequence_labels_columns = ['label']
         self.repertoiresdata_directory = repertoiresdata_directory
         self.sequence_column = sequence_column
         self.sequence_counts_column = sequence_counts_column
-        self.sequence_labels_column = sequence_labels_column
+        self.sequence_labels_columns = sequence_labels_columns
+        self.sequence_pools_columns = sequence_pools_columns
         self.col_sep = column_sep
         self.filename_extension = filename_extension
         self.exclude_rows = exclude_rows
@@ -169,15 +173,32 @@ class DatasetToHDF5(object):
                     counts_per_sequence[counts_per_sequence < 0] = 1
 
             # Get sequence labels
-            if self.sequence_labels_column is None:
-                label_per_sequence = np.zeros_like(repertoire_data[self.sequence_column].values, dtype=int)
-            else:
-                try:
-                    label_per_sequence = np.asarray(repertoire_data[self.sequence_labels_column].values, dtype=int)
-                except ValueError:
-                    label_per_sequence = repertoire_data[self.sequence_labels_column].values
-                    label_per_sequence = np.asarray(label_per_sequence, dtype=int)
+            sequence_labels = dict.fromkeys(self.sequence_labels_columns, None)
+            for sequence_labels_column in self.sequence_labels_columns:
+                # Get sequence labels
+                if sequence_labels_column is None:
+                    label_per_sequence = np.zeros_like(repertoire_data[self.sequence_column].values, dtype=int)
+                else:
+                    try:
+                        label_per_sequence = np.asarray(repertoire_data[sequence_labels_column].values, dtype=int)
+                    except ValueError:
+                        label_per_sequence = repertoire_data[sequence_labels_column].values
+                        label_per_sequence = np.asarray(label_per_sequence, dtype=int)
+                sequence_labels[sequence_labels_column] = label_per_sequence
 
+            # Get sequence pools
+            sequence_pools = dict.fromkeys(self.sequence_pools_columns, None)
+            for sequence_pools_column in self.sequence_pools_columns:
+                # Get sequence labels
+                if sequence_pools_column is None:
+                    pool_per_sequence = np.zeros_like(repertoire_data[self.sequence_column].values, dtype=int)
+                else:
+                    try:
+                        pool_per_sequence = np.asarray(repertoire_data[sequence_pools_column].values, dtype=int)
+                    except ValueError:
+                        pool_per_sequence = repertoire_data[sequence_pools_column].values
+                        pool_per_sequence = np.asarray(pool_per_sequence, dtype=int)
+                sequence_pools[sequence_pools_column] = pool_per_sequence
 
             seq_lens = np.array([len(sequence) for sequence in repertoire_data[self.sequence_column]], dtype=int)
             n_sequences = len(repertoire_data)
@@ -189,7 +210,7 @@ class DatasetToHDF5(object):
         except Exception as e:
             print(f"Failure in file {filename}")
             raise e
-        return counts_per_sequence, label_per_sequence, seq_lens, min_seq_len, max_seq_len, avg_seq_len, n_sequences
+        return counts_per_sequence, sequence_labels, sequence_pools, seq_lens, min_seq_len, max_seq_len, avg_seq_len, n_sequences
 
     def _read_aa_sequence(self, filename):
         """Read sequences of repertoire file and convert to numpy int8 array"""
@@ -243,10 +264,15 @@ class DatasetToHDF5(object):
                                              total=len(self.repertoire_files)):
                     samples_infos.append(worker_rets)
 
-            (counts_per_sequence, label_per_sequence, seq_lens, min_seq_len, max_seq_len, avg_seq_len,
+            (counts_per_sequence, seq_labels, seq_pools, seq_lens, min_seq_len, max_seq_len, avg_seq_len,
              n_sequences_per_sample) = zip(*samples_infos)
             counts_per_sequence = np.concatenate(counts_per_sequence, axis=0)
-            label_per_sequence = np.concatenate(label_per_sequence, axis=0)
+            seq_labels = {key: [d[key] for d in seq_labels] for key in set().union(*seq_labels)}
+            for sequence_labels_column in self.sequence_labels_columns:
+                seq_labels[sequence_labels_column] = np.concatenate(seq_labels[sequence_labels_column], axis=0)
+            seq_pools = {key: [d[key] for d in seq_pools] for key in set().union(*seq_pools)}
+            for sequence_pools_column in self.sequence_pools_columns:
+                seq_pools[sequence_pools_column] = np.concatenate(seq_pools[sequence_pools_column], axis=0)
             seq_lens = np.concatenate(seq_lens, axis=0)
             sample_min_seq_len = np.asarray(min_seq_len, dtype=int)
             sample_max_seq_len = np.asarray(max_seq_len, dtype=int)
@@ -283,7 +309,10 @@ class DatasetToHDF5(object):
             group.create_dataset('sample_avg_seq_len', data=sample_avg_seq_len, **self.h5py_dict)
             group.create_dataset('n_sequences_per_sample', data=n_sequences_per_sample, **self.h5py_dict)
             group.create_dataset('sequence_counts', data=counts_per_sequence, **self.h5py_dict)
-            group.create_dataset('sequence_labels', data=label_per_sequence, **self.h5py_dict)
+            for sequence_labels_column in self.sequence_labels_columns:
+                group.create_dataset(sequence_labels_column, data=seq_labels[sequence_labels_column], **self.h5py_dict)
+            for sequence_pools_column in self.sequence_pools_columns:
+                group.create_dataset(sequence_pools_column, data=seq_pools[sequence_pools_column], **self.h5py_dict)
             group.create_dataset('sequences', data=amino_acid_sequences, dtype=np.int8, **self.h5py_dict)
             metadata_group = hf.create_group('metadata')
             metadata_group.create_dataset('sample_keys', data=np.array(self.sample_keys, dtype=object),
