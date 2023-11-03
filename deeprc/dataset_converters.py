@@ -21,7 +21,6 @@ import multiprocessing
 class DatasetToHDF5(object):
     def __init__(self, repertoiresdata_directory: str, sequence_column: str = 'amino_acid',
                  sequence_counts_column: str = 'templates', sequence_labels_columns: list = None,
-                 sequence_pools_columns: list = None,
                  column_sep: str = '\t', filename_extension: str = '.tsv',
                  sequence_characters: tuple =
                  ('A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y'),
@@ -93,7 +92,7 @@ class DatasetToHDF5(object):
         self.sequence_column = sequence_column
         self.sequence_counts_column = sequence_counts_column
         self.sequence_labels_columns = sequence_labels_columns
-        self.sequence_pools_columns = sequence_pools_columns
+        self.sequence_pools_columns = [f"{slc}_pool" for slc in self.sequence_labels_columns]
         self.col_sep = column_sep
         self.filename_extension = filename_extension
         self.exclude_rows = exclude_rows
@@ -197,7 +196,7 @@ class DatasetToHDF5(object):
                         pool_per_sequence = np.asarray(repertoire_data[sequence_pools_column].values, dtype=int)
                     except ValueError:
                         pool_per_sequence = repertoire_data[sequence_pools_column].values
-                        pool_per_sequence = np.asarray(pool_per_sequence, dtype=int)
+                        pool_per_sequence = np.asarray(pool_per_sequence, dtype=str)
                 sequence_pools[sequence_pools_column] = pool_per_sequence
 
             seq_lens = np.array([len(sequence) for sequence in repertoire_data[self.sequence_column]], dtype=int)

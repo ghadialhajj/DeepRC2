@@ -76,7 +76,8 @@ def log_sequence_count_scaling_with_positive_increment(seq_counts: np.ndarray, s
     return scaled_counts
 
 
-def no_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, min_count: int, is_training: bool):
+def no_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, min_count: int, is_training: bool, *args,
+                              **kwargs):
     """No scaling of sequence counts `seq_counts`. Values `< 0` are set to `0`.
     To be used for `deeprc.dataset_readers.make_dataloaders`.
     
@@ -101,8 +102,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                      sample_n_sequences: int = 10000,
                      metadata_file_id_column: str = 'ID', metadata_file_column_sep: str = '\t',
                      sequence_column: str = 'amino_acid', sequence_counts_column: str = 'templates',
-                     sequence_labels_columns: list = None, sequence_pools_columns: list = None,
-                     used_sequence_labels_column: str = 'is_signal',
+                     sequence_labels_columns: list = None, used_sequence_labels_column: str = 'is_signal',
                      repertoire_files_column_sep: str = '\t', filename_extension: str = '.tsv', h5py_dict: dict = None,
                      all_sets: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
                      with_test: bool = False, verbose: bool = True, force_pos_in_subsampling=False, min_count: int = 1,
@@ -218,7 +218,6 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
         converter = DatasetToHDF5(repertoiresdata_directory=repertoiresdata_path, sequence_column=sequence_column,
                                   sequence_counts_column=sequence_counts_column,
                                   sequence_labels_columns=sequence_labels_columns,
-                                  sequence_pools_columns=sequence_pools_columns,
                                   column_sep=repertoire_files_column_sep, filename_extension=filename_extension,
                                   h5py_dict=h5py_dict, verbose=verbose)
         converter.save_data_to_file(output_file=hdf5_file, n_workers=n_worker_processes)
@@ -439,6 +438,7 @@ class RepertoireDataset(Dataset):
                 sampledata = dict()
                 sampledata['seq_lens'] = hf['sampledata']['seq_lens'][:]
                 sampledata[self.sequence_labels_hdf5_key] = hf['sampledata'][self.sequence_labels_hdf5_key][:]
+                sampledata[self.sequence_pools_hdf5_key] = hf['sampledata'][self.sequence_pools_hdf5_key][:]
                 sampledata[self.sequence_counts_hdf5_key] = \
                     np.array(hf['sampledata'][self.sequence_counts_hdf5_key][:], dtype=np.float32)
                 if np.any(sampledata[self.sequence_counts_hdf5_key] <= 0):
@@ -590,7 +590,8 @@ class RepertoireDataset(Dataset):
         sample_id = str(self.sample_keys[idx])
         if sample_n_sequences is None:
             sample_n_sequences = self.sample_n_sequences
-        sequences, seq_lens, counts_per_sequence, label_per_sequence, pool_per_sequence = self.get_sample(idx, sample_n_sequences)
+        sequences, seq_lens, counts_per_sequence, label_per_sequence, pool_per_sequence = self.get_sample(idx,
+                                                                                                          sample_n_sequences)
         return target_features, sequences, seq_lens, counts_per_sequence, label_per_sequence, pool_per_sequence, sample_id
 
     def _vprint(self, *args, **kwargs):
