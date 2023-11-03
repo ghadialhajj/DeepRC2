@@ -57,6 +57,19 @@ device = torch.device(device_name)
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
 
+all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is_signal_TPR_5%_FDR_50%',
+                      'is_signal_TPR_5%_FDR_80%', 'is_signal_TPR_10%_FDR_0%',
+                      'is_signal_TPR_10%_FDR_10%', 'is_signal_TPR_10%_FDR_50%',
+                      'is_signal_TPR_10%_FDR_80%', 'is_signal_TPR_20%_FDR_0%',
+                      'is_signal_TPR_20%_FDR_10%', 'is_signal_TPR_20%_FDR_50%',
+                      'is_signal_TPR_20%_FDR_80%', 'is_signal_TPR_50%_FDR_0%',
+                      'is_signal_TPR_50%_FDR_10%', 'is_signal_TPR_50%_FDR_50%',
+                      'is_signal_TPR_50%_FDR_80%', 'is_signal_TPR_100%_FDR_0%',
+                      'is_signal_TPR_100%_FDR_10%', 'is_signal_TPR_100%_FDR_50%',
+                      'is_signal_TPR_100%_FDR_80%']
+
+# all_labels_columns = ['is_signal_TPR_20%_FDR_10%']
+
 if __name__ == '__main__':
     loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": False}
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
@@ -65,26 +78,31 @@ if __name__ == '__main__':
               "dataset_type": "HIV", "attention_temperature": 0, "best_pos": None, "best_neg": None,
               "max_factor": None, "consider_seq_counts": False, "consider_seq_counts_after_cnn": False,
               "consider_seq_counts_after_att": False, "consider_seq_counts_after_softmax": False,
-              "consider_seq_counts_before_maxpool": False, "add_positional_information": True, "per_for_tmp": 0.9,
-              "non_zeros_only": False, "used_sequence_labels": "is_signal_50%"}
+              "consider_seq_counts_before_maxpool": False, "add_positional_information": True, "per_for_tmp": 0,
+              "non_zeros_only": False}
     # todo: check whether TE performed well after correcting fps, on cohort 2
     # todo: when scaling with PDRC, I didn't use FPS and FPA. Try with them
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
-    strategy = "TE"
+    # strategy = "TE"
     # strategy = "FG"
     # strategy = "TASTE"
     # strategy = "TASTER"
+    # strategy = "UniAtt"
+    strategy = "F*G*E"
     # strategy = "PDRC"
     # if strategy == "PDRC":
     fpa, fps, wsw, wsi = False, False, False, False
-    scaling_fn = plain_log_sequence_count_scaling
+    scaling_fn = no_sequence_count_scaling
     # else:
     #     fpa, fps, wsw, wsi = True, True, False, True  # True, True
     #     scaling_fn = log_sequence_count_scaling_with_positive_increment
     config.update({"scaling_fn": scaling_fn})
     max_aucs = []
     seeds_list = [0, 1, 2]
-    for seed in seeds_list:
+    seed = 2
+    # for seed in seeds_list:
+    for used_sequence_labels in all_labels_columns:
+        config.update({"used_sequence_labels": used_sequence_labels})
         n_kernels, kernel_size = 32, 9
         task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
             BinaryTarget(column_name='label_positive', true_class_value='True'),
@@ -100,17 +118,20 @@ if __name__ == '__main__':
             repertoiresdata_path=f"{root_dir}/datasets/{config['dataset_type']}/{config['dataset']}/data/simulated_repertoires",
             metadata_file_id_column='filename',
             sequence_column='cdr3_aa',
-            sequence_labels_columns=["is_signal_5_0.15", "is_signal_5_0.3", "is_signal_10_0.15", "is_signal_10_0.3",
-                                     "is_signal_20_0.15", "is_signal_20_0.3", "is_signal_50_0.15", "is_signal_50_0.3",
-                                     "is_signal_100_0.15", "is_signal_100_0.3"],
-            sequence_pools_columns=["is_signal_5_0.15_pool", "is_signal_5_0.3_pool", "is_signal_10_0.15_pool",
-                                    "is_signal_10_0.3_pool", "is_signal_20_0.15_pool", "is_signal_20_0.3_pool",
-                                    "is_signal_50_0.15_pool", "is_signal_50_0.3_pool", "is_signal_100_0.15_pool",
-                                    "is_signal_100_0.3_pool"],
-            used_sequence_labels_column=config["used_sequence_labels"],
+            sequence_labels_columns=['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is_signal_TPR_5%_FDR_50%',
+                                     'is_signal_TPR_5%_FDR_80%', 'is_signal_TPR_10%_FDR_0%',
+                                     'is_signal_TPR_10%_FDR_10%', 'is_signal_TPR_10%_FDR_50%',
+                                     'is_signal_TPR_10%_FDR_80%', 'is_signal_TPR_20%_FDR_0%',
+                                     'is_signal_TPR_20%_FDR_10%', 'is_signal_TPR_20%_FDR_50%',
+                                     'is_signal_TPR_20%_FDR_80%', 'is_signal_TPR_50%_FDR_0%',
+                                     'is_signal_TPR_50%_FDR_10%', 'is_signal_TPR_50%_FDR_50%',
+                                     'is_signal_TPR_50%_FDR_80%', 'is_signal_TPR_100%_FDR_0%',
+                                     'is_signal_TPR_100%_FDR_10%', 'is_signal_TPR_100%_FDR_50%',
+                                     'is_signal_TPR_100%_FDR_80%'],
+            used_sequence_labels_column=used_sequence_labels,
             sample_n_sequences=args.sample_n_sequences,
             sequence_counts_column=None,
-            sequence_counts_scaling_fn=config["scaling_fn"],
+            sequence_counts_scaling_fn=no_sequence_count_scaling,
             non_zeros_only=config["non_zeros_only"],
             with_test=with_test,
             force_pos_in_subsampling=fps,
@@ -123,40 +144,30 @@ if __name__ == '__main__':
         logger = Logger(dataloaders=dl_dict, with_FPs=False)
 
         if strategy == "TE":
-            group = f"TE_n_up_{args.n_updates}"
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                           "plain_DeepRC": False, "rep_loss_only": False, "mul_att_by_label": False,
-                           "both_first": False})
+                           "plain_DeepRC": False, "rep_loss_only": False, "mul_att_by_factor": False})
         elif strategy == "TASTE":
-            group = f"TASTE_n_up_{args.n_updates}_prop_{config['prop']}"
             config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
-                           "plain_DeepRC": False, "rep_loss_only": False, "mul_att_by_label": False,
-                           "both_first": False})
+                           "plain_DeepRC": False, "rep_loss_only": False, "mul_att_by_factor": False})
         elif strategy == "TASTER":
-            group = f"TASTER_n_up_{args.n_updates}_prop_{config['prop']}"
             config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
-                           "plain_DeepRC": False, "rep_loss_only": True, "mul_att_by_label": False,
-                           "both_first": False})
+                           "plain_DeepRC": False, "rep_loss_only": True, "mul_att_by_factor": False})
         elif strategy == "FG":
-            group = f"FG_n_up_{args.n_updates}_pft_{config['per_for_tmp']}"
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": True,
-                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_label": False,
-                           "both_first": False})
+                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": False})
         elif strategy == "PDRC":
-            group = f"PDRC_n_up_{args.n_updates}"
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_label": False,
-                           "both_first": False})
-        elif strategy == "GBM":
-            group = f"GBM_n_up_{args.n_updates}"
+                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": False})
+        elif strategy == "UniAtt":
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_label": True,
-                           "both_first": False})
+                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": 10,
+                           "uniform_attention": True})  # currently not used
+        elif strategy == "F*G*E":
+            config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
+                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": 500})
         elif strategy == "TEOR":
-            group = f"TEOR_n_up_{args.n_updates}"
             config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
-                           "plain_DeepRC": False, "rep_loss_only": True, "mul_att_by_label": False,
-                           "both_first": True})
+                           "plain_DeepRC": False, "rep_loss_only": True, "mul_att_by_factor": False})
         else:
             raise "Invalid strategy"
         try:
@@ -164,12 +175,8 @@ if __name__ == '__main__':
             torch.manual_seed(seed)
             np.random.seed(seed)
 
-            # run = wandb.init(project="Correct Matching - All",
-            run = wandb.init(project="HIV",
-                             group=f"{group}",
-                             # group=f"Reproduce_PE_{config['add_positional_information']}_random",
-                             reinit=True)  # , tags=config["tag"])
-            run.name = f"results_idx_{str(seed)}"  # config["run"] +   # += f"_ideal_{config['ideal']}"
+            run = wandb.init(project="HIV", group=f"{strategy}", reinit=True)
+            run.name = f"results_idx_{str(seed)}"
 
             wandb.config.update(args)
             wandb.config.update(config)
@@ -202,7 +209,7 @@ if __name__ == '__main__':
                            sequence_reduction_fraction=config["sequence_reduction_fraction"],
                            reduction_mb_size=config["reduction_mb_size"], device=device,
                            forced_attention=config["forced_attention"], force_pos_in_attention=fpa,
-                           temperature=config["attention_temperature"], mul_att_by_label=config["mul_att_by_label"],
+                           temperature=config["attention_temperature"], mul_att_by_factor=config["mul_att_by_factor"],
                            per_for_tmp=config["per_for_tmp"]).to(device=device)
 
             max_auc = train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
