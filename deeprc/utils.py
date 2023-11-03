@@ -148,9 +148,9 @@ class Logger():
             Nested dictionary of format `{task_id: {score_id: score_value}}`, e.g.
         """
         (all_logits, all_targets, all_attentions, all_seq_targets, all_seq_pools, all_seq_counts, all_n_sequences,
-         all_emb_reps) = get_outputs(model=model,dataloader=dataloader,device=device,show_progress=show_progress)
+         all_emb_reps) = get_outputs(model=model, dataloader=dataloader, device=device, show_progress=show_progress)
         split_logits = self.split_outputs(all_logits, all_targets)
-        split_attentions = self.split_outputs(all_attentions, all_seq_targets, sequence_level=True)
+        split_attentions = self.split_outputs(all_attentions, all_seq_pools, sequence_level=True)
         split_rep_embs = self.split_outputs(all_emb_reps, all_targets, flatten=False)
         return split_logits, split_attentions, split_rep_embs
 
@@ -161,8 +161,11 @@ class Logger():
         config = dict(opacity=0.6, histnorm="percent", nbinsx=n_bins)
 
         for name, values in data.items():
-            secondary_y = True if name == "negative" else False
+            secondary_y = True if name in ["TN", "FP"] else False
             fig.add_trace(go.Histogram(x=values, **config, name=name), secondary_y=secondary_y)
+        # Set y-axes titles
+        fig.update_yaxes(title_text="Postives (TP+FN)", secondary_y=False)
+        fig.update_yaxes(title_text="Negatives (TN+FP)", secondary_y=True)
 
         fig.update_layout(title=plot_title, xaxis_title=xaxis_title, yaxis_title="Percentage", barmode='overlay')
         fig.update_traces(autobinx=False, selector=dict(type='histogram'))
@@ -203,10 +206,10 @@ class Logger():
         all_values = all_values.detach().cpu()
         all_targets = all_targets.flatten().detach().cpu()
         if sequence_level:
-            TP = all_values[np.where(all_targets == "TP")[0]].detach().cpu().numpy().flatten().tolist()
-            TN = all_values[np.where(all_targets == "TN")[0]].detach().cpu().numpy().flatten().tolist()
-            FN = all_values[np.where(all_targets == "FN")[0]].detach().cpu().numpy().flatten().tolist()
-            FP = all_values[np.where(all_targets == "FP")[0]].detach().cpu().numpy().flatten().tolist()
+            TP = all_values[np.where(all_targets == 3)[0]].detach().cpu().numpy().flatten().tolist()
+            TN = all_values[np.where(all_targets == 0)[0]].detach().cpu().numpy().flatten().tolist()
+            FN = all_values[np.where(all_targets == 2)[0]].detach().cpu().numpy().flatten().tolist()
+            FP = all_values[np.where(all_targets == 1)[0]].detach().cpu().numpy().flatten().tolist()
             return {"TP": TP, "TN": TN, "FN": FN, "FP": FP}
 
         else:
@@ -277,9 +280,10 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
         all_n_sequences = torch.cat(all_n_sequences, dim=0)
         all_attentions = torch.cat(all_attentions, dim=0)
         all_seq_targets = torch.cat(all_seq_targets, dim=0)
+        all_seq_pools = torch.cat(all_seq_pools, dim=0)
         # get_boundaries(all_emb_reps, all_targets)
 
-    return all_logits, all_targets, all_attentions, all_seq_targets, all_seq_counts, all_n_sequences, all_emb_reps
+    return all_logits, all_targets, all_attentions, all_seq_targets, all_seq_pools, all_seq_counts, all_n_sequences, all_emb_reps
 
 
 def get_boundaries(all_embs, all_targets):
