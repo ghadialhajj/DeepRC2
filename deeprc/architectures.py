@@ -274,7 +274,7 @@ class DeepRC(nn.Module):
                  sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
                  device: torch.device = torch.device('cuda:0'), forced_attention: bool = True,
                  force_pos_in_attention=True, training_mode: bool = True, temperature: float = 0.01,
-                 mul_att_by_label: bool = False, per_for_tmp: float = 0.75):
+                 mul_att_by_factor: int = 1, per_for_tmp: float = 0.75):
         """DeepRC network as described in paper
         
         Apply `.reduce_and_stack_minibatch()` to reduce number of sequences by `sequence_reduction_fraction`
@@ -335,7 +335,7 @@ class DeepRC(nn.Module):
         self.training_mode = training_mode
         self.temperature = temperature
         self.per_for_tmp = per_for_tmp
-        self.mul_att_by_label = mul_att_by_label
+        self.mul_att_by_factor = mul_att_by_factor
 
         # sequence embedding network (h())
         if sequence_embedding_as_16_bit:
@@ -358,7 +358,7 @@ class DeepRC(nn.Module):
                                                                         dtype=self.embedding_dtype).detach()
 
     def reduce_and_stack_minibatch(self, targets, sequences_of_indices, sequence_lengths, sequence_counts,
-                                   sequence_labels):
+                                   sequence_labels, sequence_pools):
         """ Apply attention-based reduction of number of sequences per bag and stacked/concatenated bags to minibatch.
         
         Reduces sequences per bag `d_k` to top `d_k*sequence_reduction_fraction` important sequences,
@@ -406,6 +406,7 @@ class DeepRC(nn.Module):
             sequence_lengths = [t.to(self.device) for t in sequence_lengths]
             sequence_counts = [t.to(self.device) for t in sequence_counts]
             sequence_labels = [t.to(self.device) for t in sequence_labels]
+            sequence_pools = [t.to(self.device) for t in sequence_pools]
 
             # TODO: potentially optimize using parallelization
             # Compute features (turn into 1-hot sequences and add position features)
@@ -415,15 +416,17 @@ class DeepRC(nn.Module):
                 in zip(sequences_of_indices, sequence_lengths, sequence_counts)]
 
             # Reduce number of sequences (apply __reduce_sequences_for_bag__ separately to all bags in mb)
-            reduced_inputs, reduced_sequence_lengths, reduced_sequence_counts, reduced_sequence_labels, reduced_sequence_attentions = \
-                list(zip(*[self.__reduce_sequences_for_bag__(inp, sequence_lengths, sequence_counts, sequence_labels)
-                           for inp, sequence_lengths, sequence_counts, sequence_labels
-                           in zip(inputs_list, sequence_lengths, sequence_counts, sequence_labels)]))
+            reduced_inputs, reduced_sequence_lengths, reduced_sequence_counts, reduced_sequence_labels, reduced_sequence_pools, reduced_sequence_attentions = \
+                list(zip(*[self.__reduce_sequences_for_bag__(inp, sequence_lengths, sequence_counts, sequence_labels,
+                                                             sequence_pools)
+                           for inp, sequence_lengths, sequence_counts, sequence_labels, sequence_pools
+                           in zip(inputs_list, sequence_lengths, sequence_counts, sequence_labels, sequence_pools)]))
 
             # Stack bags in minibatch to tensor
             mb_targets = torch.stack(targets, dim=0).to(device=self.device)
             mb_reduced_sequence_lengths = torch.cat(reduced_sequence_lengths, dim=0)
             mb_reduced_sequence_labels = torch.cat(reduced_sequence_labels, dim=0)
+            mb_reduced_sequence_pools = torch.cat(reduced_sequence_pools, dim=0)
             mb_reduced_sequence_counts = torch.cat(reduced_sequence_counts, dim=0)
             mb_reduced_sequence_attentions = torch.cat(reduced_sequence_attentions, dim=0)
             mb_reduced_inputs = torch.cat(reduced_inputs, dim=0)
@@ -431,7 +434,7 @@ class DeepRC(nn.Module):
                                           device=self.device)
 
         return mb_targets, mb_reduced_inputs, mb_reduced_sequence_lengths, mb_reduced_sequence_counts, \
-            mb_reduced_sequence_labels, mb_n_sequences, mb_reduced_sequence_attentions
+            mb_reduced_sequence_labels, mb_reduced_sequence_pools, mb_n_sequences, mb_reduced_sequence_attentions
 
     def forward(self, inputs_flat, sequence_lengths_flat, n_sequences_per_bag,
                 sequence_counts, sequence_labels, sequence_attentions):
@@ -470,6 +473,8 @@ class DeepRC(nn.Module):
         # Calculate attention weights f() before softmax function for all bags in mb (shape: (d_k, 1))
         if self.forced_attention:
             mb_attention_weights = sequence_labels[:, None]
+        # elif self.mul_att_by_factor:
+        #     mb_attention_weights = torch.ones_like(sequence_labels[:, None]) / len(sequence_labels)
         else:
             mb_attention_weights = self.attention_nn(mb_emb_seqs)
 
@@ -483,12 +488,13 @@ class DeepRC(nn.Module):
             emb_seqs = mb_emb_seqs[start_i:start_i + n_seqs]
             if self.consider_seq_counts_after_att:
                 emb_seqs = emb_seqs * sequence_counts[start_i:start_i + n_seqs].reshape(-1, 1)
-            if self.mul_att_by_label:
-                attention_weights = attention_weights * torch.softmax(sequence_labels, 0)
             # Calculate attention activations (softmax over n_sequences_per_bag) (shape: (n_sequences_per_bag, 1))
             if self.per_for_tmp != 0:  # not self.training_mode and
-                attention_weights = attention_weights  # / self.get_temp(sequence_labels)  # self.temperature
+                attention_weights = attention_weights / self.get_temp(sequence_labels)  # self.temperature
             attention_weights = torch.softmax(attention_weights, dim=0)
+            if self.mul_att_by_factor:
+                attention_weights = attention_weights * (sequence_labels[start_i:start_i + n_seqs] * (
+                        self.mul_att_by_factor - 1) + 1).unsqueeze(1)
             if self.consider_seq_counts_after_softmax:
                 attention_weights = attention_weights * sequence_counts[start_i:start_i + n_seqs].reshape(-1, 1)
             # Apply attention weights to sequence features (shape: (n_sequences_per_bag, d_v))
@@ -560,7 +566,7 @@ class DeepRC(nn.Module):
         features_one_hot_padded = features_one_hot_padded / features_one_hot_padded.std()
         return features_one_hot_padded
 
-    def __reduce_sequences_for_bag__(self, inputs, sequence_lengths, sequence_counts, sequence_labels):
+    def __reduce_sequences_for_bag__(self, inputs, sequence_lengths, sequence_counts, sequence_labels, sequence_pools):
         """ Reduces sequences to top `n_sequences*sequence_reduction_fraction` important sequences,
         sorted descending by importance based on attention weights.
         Reduction is performed using minibatches of `reduction_mb_size` sequences.
@@ -645,6 +651,9 @@ class DeepRC(nn.Module):
             reduced_sequence_labels = \
                 sequence_labels[used_sequences.to(device=self.device)].detach().to(device=self.device,
                                                                                    dtype=self.embedding_dtype)
+            reduced_sequence_pools = \
+                sequence_pools[used_sequences.to(device=self.device)].detach().to(device=self.device,
+                                                                                  dtype=self.embedding_dtype)
             reduced_sequence_counts = \
                 sequence_counts[used_sequences.to(device=self.device)].detach().to(device=self.device,
                                                                                    dtype=self.embedding_dtype)
@@ -656,8 +665,10 @@ class DeepRC(nn.Module):
                 reduced_inputs = inputs.detach().to(device=self.device, dtype=self.embedding_dtype)
                 reduced_sequence_lengths = sequence_lengths.detach().to(device=self.device, dtype=self.embedding_dtype)
                 reduced_sequence_labels = sequence_labels.detach().to(device=self.device, dtype=self.embedding_dtype)
+                reduced_sequence_pools = sequence_pools.detach().to(device=self.device, dtype=self.embedding_dtype)
                 reduced_sequence_counts = sequence_counts.detach().to(device=self.device, dtype=self.embedding_dtype)
                 reduced_sequence_attentions = torch.ones(len(sequence_counts)).to(device=self.device,
                                                                                   dtype=self.embedding_dtype)
 
-        return reduced_inputs, reduced_sequence_lengths, reduced_sequence_counts, reduced_sequence_labels, reduced_sequence_attentions
+        return (reduced_inputs, reduced_sequence_lengths, reduced_sequence_counts, reduced_sequence_labels,
+                reduced_sequence_pools, reduced_sequence_attentions)
