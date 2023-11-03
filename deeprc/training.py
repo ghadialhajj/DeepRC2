@@ -51,7 +51,7 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
         See `deeprc/examples/` for examples.
     """
     with torch.no_grad():
-        all_logits, all_targets, all_attentions, all_seq_targets, all_seq_counts, all_n_sequences, *_ = get_outputs(
+        all_logits, all_targets, all_attentions, all_seq_targets, all_pools, all_seq_counts, all_n_sequences, *_ = get_outputs(
             model, dataloader,
             show_progress,
             device)
@@ -198,13 +198,14 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                                 param.requires_grad = False
 
                     # Get samples as lists
-                    targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, sample_ids = data
+                    targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence, sample_ids = data
                     tensor_list_copy = [tensor.clone() for tensor in
                                         inputs]  # Apply attention-based sequence reduction and create minibatch
                     with torch.no_grad():
-                        targets, inputs, sequence_lengths, sequence_counts, sequence_labels, n_sequences, sequence_attentions = \
+                        targets, inputs, sequence_lengths, sequence_counts, sequence_labels, sequence_pools, n_sequences, sequence_attentions = \
                             model.reduce_and_stack_minibatch(
-                                targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence)
+                                targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence,
+                                pools_per_sequence)
                     # Reset gradients
                     optimizer.zero_grad()
                     assert model.training_mode, "Model is not in training mode!"
