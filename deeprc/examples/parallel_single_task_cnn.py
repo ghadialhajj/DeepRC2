@@ -50,37 +50,36 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:1"
+device_name = "cuda:0"
 with_test = True
 device = torch.device(device_name)
 
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
 
-all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is_signal_TPR_5%_FDR_50%',
-                      'is_signal_TPR_5%_FDR_80%', 'is_signal_TPR_10%_FDR_0%',
-                      'is_signal_TPR_10%_FDR_10%', 'is_signal_TPR_10%_FDR_50%',
-                      'is_signal_TPR_10%_FDR_80%', 'is_signal_TPR_20%_FDR_0%',
-                      'is_signal_TPR_20%_FDR_10%', 'is_signal_TPR_20%_FDR_50%',
-                      'is_signal_TPR_20%_FDR_80%', 'is_signal_TPR_50%_FDR_0%',
-                      'is_signal_TPR_50%_FDR_10%', 'is_signal_TPR_50%_FDR_50%',
-                      'is_signal_TPR_50%_FDR_80%', 'is_signal_TPR_100%_FDR_0%',
-                      'is_signal_TPR_100%_FDR_10%', 'is_signal_TPR_100%_FDR_50%',
-                      'is_signal_TPR_100%_FDR_80%']
+# all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is_signal_TPR_5%_FDR_50%',
+#                       'is_signal_TPR_5%_FDR_80%', 'is_signal_TPR_10%_FDR_0%',
+#                       'is_signal_TPR_10%_FDR_10%', 'is_signal_TPR_10%_FDR_50%',
+#                       'is_signal_TPR_10%_FDR_80%', 'is_signal_TPR_20%_FDR_0%',
+#                       'is_signal_TPR_20%_FDR_10%', 'is_signal_TPR_20%_FDR_50%',
+#                       'is_signal_TPR_20%_FDR_80%', 'is_signal_TPR_50%_FDR_0%',
+#                       'is_signal_TPR_50%_FDR_10%', 'is_signal_TPR_50%_FDR_50%',
+#                       'is_signal_TPR_50%_FDR_80%', 'is_signal_TPR_100%_FDR_0%',
+#                       'is_signal_TPR_100%_FDR_10%', 'is_signal_TPR_100%_FDR_50%',
+#                       'is_signal_TPR_100%_FDR_80%']
 
-# all_labels_columns = ['is_signal_TPR_20%_FDR_10%']
+all_labels_columns = ['is_signal_TPR_100%_FDR_0%']
 
 if __name__ == '__main__':
     loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": False}
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.02,
-              "dataset": "phenotype_burden_40", "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "HIV",
-              "dataset_type": "HIV", "attention_temperature": 0, "best_pos": None, "best_neg": None,
+              "dataset": "phenotype_burden_375", "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "HIV",
+              "dataset_type": "HIV/v2", "attention_temperature": 0, "best_pos": None, "best_neg": None,
               "max_factor": None, "consider_seq_counts": False, "consider_seq_counts_after_cnn": False,
               "consider_seq_counts_after_att": False, "consider_seq_counts_after_softmax": False,
               "consider_seq_counts_before_maxpool": False, "add_positional_information": True, "per_for_tmp": 0,
               "non_zeros_only": False}
-    # todo: check whether TE performed well after correcting fps, on cohort 2
     # todo: when scaling with PDRC, I didn't use FPS and FPA. Try with them
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
     # strategy = "TE"
@@ -88,8 +87,9 @@ if __name__ == '__main__':
     # strategy = "TASTE"
     # strategy = "TASTER"
     # strategy = "UniAtt"
-    strategy = "F*G*E"
-    # strategy = "PDRC"
+    # strategy = "F*G*E"
+    strategy = "PDRC"
+    # strategy = "SInS"
     # if strategy == "PDRC":
     fpa, fps, wsw, wsi = False, False, False, False
     scaling_fn = no_sequence_count_scaling
@@ -118,16 +118,7 @@ if __name__ == '__main__':
             repertoiresdata_path=f"{root_dir}/datasets/{config['dataset_type']}/{config['dataset']}/data/simulated_repertoires",
             metadata_file_id_column='filename',
             sequence_column='cdr3_aa',
-            sequence_labels_columns=['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is_signal_TPR_5%_FDR_50%',
-                                     'is_signal_TPR_5%_FDR_80%', 'is_signal_TPR_10%_FDR_0%',
-                                     'is_signal_TPR_10%_FDR_10%', 'is_signal_TPR_10%_FDR_50%',
-                                     'is_signal_TPR_10%_FDR_80%', 'is_signal_TPR_20%_FDR_0%',
-                                     'is_signal_TPR_20%_FDR_10%', 'is_signal_TPR_20%_FDR_50%',
-                                     'is_signal_TPR_20%_FDR_80%', 'is_signal_TPR_50%_FDR_0%',
-                                     'is_signal_TPR_50%_FDR_10%', 'is_signal_TPR_50%_FDR_50%',
-                                     'is_signal_TPR_50%_FDR_80%', 'is_signal_TPR_100%_FDR_0%',
-                                     'is_signal_TPR_100%_FDR_10%', 'is_signal_TPR_100%_FDR_50%',
-                                     'is_signal_TPR_100%_FDR_80%'],
+            sequence_labels_columns=all_labels_columns,
             used_sequence_labels_column=used_sequence_labels,
             sample_n_sequences=args.sample_n_sequences,
             sequence_counts_column=None,
@@ -157,14 +148,19 @@ if __name__ == '__main__':
                            "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": False})
         elif strategy == "PDRC":
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": False})
+                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": False,
+                           "shift_by_factor": None})
         elif strategy == "UniAtt":
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                            "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": 10,
                            "uniform_attention": True})  # currently not used
         elif strategy == "F*G*E":
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": 500})
+                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": 100})
+        elif strategy == "SInS":  # shift inside softmax
+            config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
+                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": None,
+                           "shift_by_factor": 10})
         elif strategy == "TEOR":
             config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
                            "plain_DeepRC": False, "rep_loss_only": True, "mul_att_by_factor": False})
@@ -175,7 +171,7 @@ if __name__ == '__main__':
             torch.manual_seed(seed)
             np.random.seed(seed)
 
-            run = wandb.init(project="HIV", group=f"{strategy}", reinit=True)
+            run = wandb.init(project="HIV - v2", group=f"{strategy}", reinit=True)
             run.name = f"results_idx_{str(seed)}"
 
             wandb.config.update(args)
@@ -210,7 +206,8 @@ if __name__ == '__main__':
                            reduction_mb_size=config["reduction_mb_size"], device=device,
                            forced_attention=config["forced_attention"], force_pos_in_attention=fpa,
                            temperature=config["attention_temperature"], mul_att_by_factor=config["mul_att_by_factor"],
-                           per_for_tmp=config["per_for_tmp"]).to(device=device)
+                           per_for_tmp=config["per_for_tmp"], shift_by_factor=config["shift_by_factor"]).to(
+                device=device)
 
             max_auc = train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
                             trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
