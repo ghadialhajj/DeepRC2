@@ -311,9 +311,11 @@ class Sequence_Target(torch.nn.Module):
         predictions = predictions.float().cpu().numpy()
         labels = targets.detach().cpu().numpy()
         # labels = (labels + 5) / 10
-        attentions_pos = np.dot(labels, predictions) / sum(labels)
+        avg_score_diff = 0
         attentions_neg = np.dot(np.logical_not(labels), predictions) / (len(labels) - sum(labels))
-        avg_score_diff = attentions_pos - attentions_neg
+        if sum(labels):
+            attentions_pos = np.dot(labels, predictions) / sum(labels)
+            avg_score_diff = attentions_pos - attentions_neg
         pr_auc = metrics.average_precision_score(y_true=labels, y_score=predictions, average=None)
         try:
             roc_auc = metrics.roc_auc_score(y_true=labels, y_score=predictions, average=None)
