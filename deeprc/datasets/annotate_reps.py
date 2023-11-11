@@ -111,14 +111,7 @@ class AnnotateReps:
                     if np.count_nonzero(df[label] == 1):
                         print(f"FDR: True: {fdr}, Calc: {fdr_calc}")
                 print(f"FPR: True: {fpr}, Calc: {fpr_calc}")
-                # df.loc[(df['is_signal'] == 1) & (rand_nums < 1 - tpr), label] = 0
-                # df.loc[(df['is_signal'] == 0) & (rand_nums < fpr), label] = 1
                 df[label + '_pool'] = df['is_signal'] * 2 + df[label]
-                # df[label + '_pool'] = df[label + '_pool'].replace(mapping)
-                # FN = np.count_nonzero(df[label + '_pool'] == "FN")
-                # TP = np.count_nonzero(df[label + '_pool'] == "TP")
-                # FP = np.count_nonzero(df[label + '_pool'] == "FP")
-                # print()
 
         return df
 
