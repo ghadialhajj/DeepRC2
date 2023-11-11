@@ -306,6 +306,7 @@ class Sequence_Target(torch.nn.Module):
         scores: dict
             Dictionary of format `{score_id: score_value}`, e.g. `{"avg_score_diff": 0.6, "loss": 0.01}`.
         """
+        # todo distinguish true vs assigned labels
         predictions = self.activation_function(raw_outputs=raw_outputs).detach()
         predictions_thresholded = (predictions > 0.5).float().cpu().numpy()
         predictions = predictions.float().cpu().numpy()
