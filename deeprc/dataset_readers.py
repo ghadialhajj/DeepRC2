@@ -106,7 +106,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                      repertoire_files_column_sep: str = '\t', filename_extension: str = '.tsv', h5py_dict: dict = None,
                      all_sets: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
                      with_test: bool = False, verbose: bool = True, force_pos_in_subsampling=False, min_count: int = 1,
-                     max_factor: int = 1, non_zeros_only: bool = False) \
+                     max_factor: int = 1, non_zeros_only: bool = False, n_training_samples: int = 360) \
         -> Tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
     """Get data loaders for a dataset
     
@@ -264,8 +264,8 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                          f"exist in `split_inds`.")
     if with_test:
         testset_inds = split_inds.pop(cross_validation_fold)
-    validationset_inds = split_inds.pop(cross_validation_fold - 1)
-    trainingset_inds = np.concatenate(split_inds)
+    validationset_inds = split_inds.pop(cross_validation_fold - 1)[:int(n_training_samples / 3)]
+    trainingset_inds = np.concatenate(split_inds)[:n_training_samples]
 
     if verbose:
         print("Creating dataloaders for dataset splits")
