@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pickle
 import re
+from multiprocessing import Pool
 
 # Define the mapping between numbers and strings
 mapping = {0: "TN", 1: "FP", 2: "FN", 3: "TP"}
@@ -11,10 +12,13 @@ transposed_mapping = {v: k for k, v in mapping.items()}
 
 
 class AnnotateReps:
-    def __init__(self, root_directory, n_signal=40, suffix="simulated_repertoires", n_seq=25e3):
+    def __init__(self, root_directory, n_signal=40, suffix="simulated_repertoires", n_seq=25e3, n_threads=10):
         self.root_directory = root_directory
+        self.data_directory = root_directory + "/" + suffix
+        self.metadata = pd.read_csv(root_directory + "/metadata.csv")
         self.n_signal = n_signal
         self.suffix = suffix
+        self.n_threads = n_threads
         self.wr = n_signal / n_seq
         self.TPR = np.array([5, 10, 20, 50, 100])
         self.FDR = np.array([0, 10, 50, 80])
@@ -40,9 +44,10 @@ class AnnotateReps:
                 tpr_fdr_dict[f"tpr_{tpr}_fdr_{fdr}"] = false_signals
         return tpr_fdr_dict
 
-    def annotate_rep(self, tsv_file, wr, class_label):
-        df = self.annotate(tsv_file, wr, class_label)
-        df.to_csv(tsv_file, sep='\t', index=False)
+    def annotate_rep(self, tsv_file):
+        print("File #", self.metadata.loc[self.metadata['filename'] == tsv_file].index[0])
+        df = self.annotate(tsv_file)
+        df.to_csv(f"{self.data_directory}/{tsv_file}", sep='\t', index=False)
 
     def get_implanted_signals(self):
         # read the csv file where the first column is not the index column
@@ -77,8 +82,9 @@ class AnnotateReps:
             negative_sequences = pickle.load(f)
         return negative_sequences
 
-    def annotate(self, tsv_file, wr, class_label):
-        df = pd.read_csv(tsv_file, sep='\t')
+    def annotate(self, tsv_file):
+        class_label = self.metadata.loc[self.metadata["filename"] == tsv_file, "label_positive"].tolist()[0]
+        df = pd.read_csv(f"{self.data_directory}/{tsv_file}", sep='\t')
         columns_to_keep = ["cdr3_aa", "v_call", "j_call", "is_signal"]
         df = df[columns_to_keep]
         if class_label:
@@ -92,7 +98,7 @@ class AnnotateReps:
                 label = 'is_signal_TPR_' + str(int(tpr * 100)) + '%_FDR_' + str(fdr) + '%'
                 df[label] = df['is_signal']
                 fdr = fdr / 100
-                fpr = self.compute_FPR(tpr, fdr, wr)
+                fpr = self.compute_FPR(tpr, fdr, self.wr)
                 # false_signals = self.tpr_fpr_dict[f"fpr_{fpr}"]
                 indices_0_to_1 = (df['is_signal'] == 0) & df['cdr3_aa'].isin(self.tpr_fdr_dict[f"tpr_{tpr}_fdr_{fdr}"])
                 df.loc[indices_0_to_1, label] = 1
@@ -106,11 +112,11 @@ class AnnotateReps:
                         df[label] == 1)
                 fpr_calc = np.count_nonzero((df[label] == 1) & (df["is_signal"] == 0)) / np.count_nonzero(
                     df['is_signal'] == 0)
-                if class_label:
-                    print(f"TPR: True: {tpr}, Calc: {tpr_calc}")
-                    if np.count_nonzero(df[label] == 1):
-                        print(f"FDR: True: {fdr}, Calc: {fdr_calc}")
-                print(f"FPR: True: {fpr}, Calc: {fpr_calc}")
+                # if class_label:
+                #     print(f"TPR: True: {tpr}, Calc: {tpr_calc}")
+                #     if np.count_nonzero(df[label] == 1):
+                #         print(f"FDR: True: {fdr}, Calc: {fdr_calc}")
+                # print(f"FPR: True: {fpr}, Calc: {fpr_calc}")
                 df[label + '_pool'] = df['is_signal'] * 2 + df[label]
 
         return df
@@ -120,14 +126,20 @@ class AnnotateReps:
         return fpr
 
     def annotate_reps_all_files(self):
-        directory = self.root_directory + "/" + self.suffix
-        metadata = pd.read_csv(self.root_directory + "/metadata.csv")
-        for id, file in enumerate(os.listdir(directory)):
+        for id, file in enumerate(os.listdir(self.data_directory)):
             if id % 50 == 0:
                 print(id)
             if file.endswith(".tsv"):
-                class_label = metadata.loc[metadata["filename"] == file, "label_positive"].tolist()[0]
-                self.annotate_rep(f"{directory}/{file}", self.wr, class_label)
+                self.annotate_rep(file)
+
+    # make a parallel version of annotate_reps_all_files using multiprocessing
+    def annotate_reps_all_files_parallel(self):
+        files = [file for file in os.listdir(self.data_directory) if file.endswith(".tsv")]
+
+        # Create a pool with the number of available CPUs
+        with Pool(self.n_threads) as pool:
+            # Use starmap to pass multiple arguments to the wrapper function
+            pool.map(self.annotate_rep, files)
 
     def test_metrics_per_label_per_rep(self, TP, FP, FN, TN):
         wr = (TP + FN) / (TP + FP + FN + TN)
@@ -161,16 +173,14 @@ class AnnotateReps:
         return TP, FP, FN, TN
 
     def test_metrics_across_labels(self):
-        directory = self.root_directory + "/" + self.suffix
-        metadata = pd.read_csv(self.root_directory + "/metadata.csv")
         # compile results in dict of labels of dicts of metrics
         results = {}
-        for id, file in enumerate(os.listdir(directory)):
+        for id, file in enumerate(os.listdir(self.data_directory)):
             if id % 50 == 0:
                 print(id)
             if file.endswith(".tsv"):
-                df = pd.read_csv(f"{directory}/{file}", sep='\t')
-                class_label = metadata[metadata['filename'] == file]['label_positive'].values[0]
+                df = pd.read_csv(f"{self.data_directory}/{file}", sep='\t')
+                class_label = self.metadata[self.metadata['filename'] == file]['label_positive'].values[0]
                 for tpr in self.TPR:
                     tpr = tpr / 100
                     for fdr in self.FDR:
@@ -209,7 +219,9 @@ if __name__ == '__main__':
     # set a seed for all random operations
     random.seed(0)
     np.random.seed(0)
-
-    annotater = AnnotateReps("/storage/ghadia/DeepRC2/deeprc/datasets/HIV/v2/phenotype_burden_40/data")
+    n_signal = 5
+    annotater = AnnotateReps(f"/storage/ghadia/DeepRC2/deeprc/datasets/HIV/v5/phenotype_burden_{n_signal}/data",
+                             n_signal=n_signal, n_threads=30)
     # annotater.annotate_reps_all_files()
+    annotater.annotate_reps_all_files_parallel()
     annotater.test_metrics_across_labels()
