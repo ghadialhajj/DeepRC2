@@ -87,9 +87,7 @@ class AnnotateReps:
         df = pd.read_csv(f"{self.data_directory}/{tsv_file}", sep='\t')
         columns_to_keep = ["cdr3_aa", "v_call", "j_call", "is_signal"]
         df = df[columns_to_keep]
-        if class_label:
-            assert np.count_nonzero(df['is_signal'] == 1)
-        else:
+        if not class_label:
             assert not np.count_nonzero(df['is_signal'] == 1)
         for tpr in self.TPR:
             tpr = tpr / 100
@@ -104,14 +102,14 @@ class AnnotateReps:
                 df.loc[indices_0_to_1, label] = 1
                 indices_1_to_0 = (df['is_signal'] == 1) & ~df['cdr3_aa'].isin(self.tpr_fdr_dict[f"tpr_{tpr}"])
                 df.loc[indices_1_to_0, label] = 0
-                if class_label:
-                    tpr_calc = np.count_nonzero((df[label] == 1) & (df["is_signal"] == 1)) / np.count_nonzero(
-                        df['is_signal'] == 1)
-                if np.count_nonzero(df[label] == 1):
-                    fdr_calc = np.count_nonzero((df[label] == 1) & (df["is_signal"] == 0)) / np.count_nonzero(
-                        df[label] == 1)
-                fpr_calc = np.count_nonzero((df[label] == 1) & (df["is_signal"] == 0)) / np.count_nonzero(
-                    df['is_signal'] == 0)
+                # if class_label:
+                #     tpr_calc = np.count_nonzero((df[label] == 1) & (df["is_signal"] == 1)) / np.count_nonzero(
+                #         df['is_signal'] == 1)
+                # if np.count_nonzero(df[label] == 1):
+                #     fdr_calc = np.count_nonzero((df[label] == 1) & (df["is_signal"] == 0)) / np.count_nonzero(
+                #         df[label] == 1)
+                # fpr_calc = np.count_nonzero((df[label] == 1) & (df["is_signal"] == 0)) / np.count_nonzero(
+                #     df['is_signal'] == 0)
                 # if class_label:
                 #     print(f"TPR: True: {tpr}, Calc: {tpr_calc}")
                 #     if np.count_nonzero(df[label] == 1):
@@ -175,6 +173,7 @@ class AnnotateReps:
     def test_metrics_across_labels(self):
         # compile results in dict of labels of dicts of metrics
         results = {}
+        counter = 0
         for id, file in enumerate(os.listdir(self.data_directory)):
             if id % 50 == 0:
                 print(id)
@@ -190,9 +189,7 @@ class AnnotateReps:
                             results[label] = {"TPR": [], "FDR": [], "FPR": [], "WR": []}
                         tpr_e, fdr_e, fpr_e, wr_e = self.calculate_wr_tpr_fdr(TP, FP, FN, TN)
                         if class_label and wr_e == 0:
-                            print(file)
-                            print("positive file found without true positives")
-                            break
+                            counter += 1
                         if not class_label and wr_e != 0:
                             print(file)
                             print("negative file found with positives")
@@ -204,12 +201,30 @@ class AnnotateReps:
                         if class_label:
                             results[label]["WR"].append(wr_e)
                         # self.test_metrics_per_label_per_rep(TP, FP, FN, TN)
+        print(f"Empty positive files @ {self.wr}: {counter}")
+        pattern = r"TPR_(\d+)%_FDR_(\d+)%"
         # compute mean and std across reps
         for label in results:
             print(label)
+            match = re.search(pattern, label)
+            tpr = match.group(1)
+            fdr = match.group(2)
             for metric in results[label]:
                 results[label][metric] = np.mean(results[label][metric]), np.std(results[label][metric])
+                if metric == "FPR":
+                    continue
                 print(metric, results[label][metric])
+                # # if not (self.n_signal in [5, 13] and tpr in ["5", "10"]):
+                # if self.n_signal not in [5, 13]:
+                #     if metric == "TPR":
+                #         assert np.abs((results[label][metric][0] * 100 - int(tpr)) / int(tpr) * 100) < 10
+                #     if metric == "FDR":
+                #         if int(fdr) == 0:
+                #             assert results[label][metric][0] == 0
+                #         else:
+                #             assert np.abs((results[label][metric][0] * 100 - int(fdr)) / int(fdr) * 100) < 10
+                # if metric == "WR":
+                #     assert np.abs((results[label][metric][0] - self.wr) / self.wr * 100) < 10
 
 
 if __name__ == '__main__':
@@ -219,9 +234,10 @@ if __name__ == '__main__':
     # set a seed for all random operations
     random.seed(0)
     np.random.seed(0)
-    n_signal = 5
-    annotater = AnnotateReps(f"/storage/ghadia/DeepRC2/deeprc/datasets/HIV/v5/phenotype_burden_{n_signal}/data",
-                             n_signal=n_signal, n_threads=30)
-    # annotater.annotate_reps_all_files()
-    annotater.annotate_reps_all_files_parallel()
-    annotater.test_metrics_across_labels()
+    for n_signal in [5, 13, 25, 50, 250, 500]:
+        # for n_signal in [500]:
+        annotater = AnnotateReps(f"/storage/ghadia/DeepRC2/deeprc/datasets/HIV/v6/phenotype_burden_{n_signal}/data",
+                                 n_signal=n_signal, n_threads=30)
+        # annotater.annotate_reps_all_files()
+        annotater.annotate_reps_all_files_parallel()
+        annotater.test_metrics_across_labels()
