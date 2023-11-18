@@ -28,7 +28,7 @@ from deeprc.training import ESException
 #
 parser = argparse.ArgumentParser()
 parser.add_argument('--n_updates', help='Number of updates to train for. Recommended: int(1e5). Default: int(1e3)',
-                    type=int, default=int(15e3))
+                    type=int, default=int(20e3))
 # type=int, default=int(100))
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
@@ -59,24 +59,24 @@ root_dir = "/storage/ghadia/DeepRC2/deeprc"
 # root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
 
-# all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is_signal_TPR_5%_FDR_50%',
-#                       'is_signal_TPR_5%_FDR_80%', 'is_signal_TPR_10%_FDR_0%',
-#                       'is_signal_TPR_10%_FDR_10%', 'is_signal_TPR_10%_FDR_50%',
-#                       'is_signal_TPR_10%_FDR_80%', 'is_signal_TPR_20%_FDR_0%',
-#                       'is_signal_TPR_20%_FDR_10%', 'is_signal_TPR_20%_FDR_50%',
-#                       'is_signal_TPR_20%_FDR_80%', 'is_signal_TPR_50%_FDR_0%',
-#                       'is_signal_TPR_50%_FDR_10%', 'is_signal_TPR_50%_FDR_50%',
-#                       'is_signal_TPR_50%_FDR_80%', 'is_signal_TPR_100%_FDR_0%',
-#                       'is_signal_TPR_100%_FDR_10%', 'is_signal_TPR_100%_FDR_50%',
-#                       'is_signal_TPR_100%_FDR_80%']
+all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is_signal_TPR_5%_FDR_50%',
+                      'is_signal_TPR_5%_FDR_80%', 'is_signal_TPR_10%_FDR_0%',
+                      'is_signal_TPR_10%_FDR_10%', 'is_signal_TPR_10%_FDR_50%',
+                      'is_signal_TPR_10%_FDR_80%', 'is_signal_TPR_20%_FDR_0%',
+                      'is_signal_TPR_20%_FDR_10%', 'is_signal_TPR_20%_FDR_50%',
+                      'is_signal_TPR_20%_FDR_80%', 'is_signal_TPR_50%_FDR_0%',
+                      'is_signal_TPR_50%_FDR_10%', 'is_signal_TPR_50%_FDR_50%',
+                      'is_signal_TPR_50%_FDR_80%', 'is_signal_TPR_100%_FDR_0%',
+                      'is_signal_TPR_100%_FDR_10%', 'is_signal_TPR_100%_FDR_50%',
+                      'is_signal_TPR_100%_FDR_80%']
 
-all_labels_columns = ['is_signal_TPR_100%_FDR_0%']
+# all_labels_columns = ['is_signal_TPR_100%_FDR_0%']
 
 if __name__ == '__main__':
     loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": False}
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.02,
-              "dataset": f"phenotype_burden_13", "pos_weight_seq": 100, "pos_weight_rep": 1.,
+              "dataset": f"phenotype_burden_50", "pos_weight_seq": 100, "pos_weight_rep": 1.,
               "Branch": "HIV", "dataset_type": "HIV/v6", "attention_temperature": 0,
               "consider_seq_counts": False,
               "add_positional_information": True, "per_for_tmp": 0,
@@ -88,8 +88,8 @@ if __name__ == '__main__':
     # strategy = "TASTE"
     # strategy = "TASTER"
     # strategy = "UniAtt"
-    # strategy = "F*G*E"
-    strategy = "PDRC"
+    strategy = "F*G*E"
+    # strategy = "PDRC"
     # strategy = "SInS"
     fpa, fps, wsw, wsi = False, False, False, False
     scaling_fn = no_sequence_count_scaling
