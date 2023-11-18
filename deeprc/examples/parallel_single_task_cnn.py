@@ -76,7 +76,7 @@ if __name__ == '__main__':
     loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": False}
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.02,
-              "dataset": f"phenotype_burden_50", "pos_weight_seq": 100, "pos_weight_rep": 1.,
+              "dataset": f"phenotype_burden_5", "pos_weight_seq": 100, "pos_weight_rep": 1.,
               "Branch": "HIV", "dataset_type": "HIV/v6", "attention_temperature": 0,
               "consider_seq_counts": False,
               "add_positional_information": True, "per_for_tmp": 0,
