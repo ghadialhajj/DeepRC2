@@ -55,7 +55,7 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
             model, dataloader,
             show_progress,
             device)
-        all_true_seq_targets = torch.Tensor([s < 2 for s in all_seq_targets])
+        all_true_seq_targets = torch.Tensor([s < 2 for s in all_seq_targets]).to(device)
         scores = task_definition.get_scores(raw_outputs=all_logits, targets=all_targets)
         sequence_scores = task_definition.get_sequence_scores(raw_attentions=all_attentions.squeeze(),
                                                               sequence_targets=all_true_seq_targets,
