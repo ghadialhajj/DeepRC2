@@ -33,7 +33,7 @@ parser.add_argument('--n_updates', help='Number of updates to train for. Recomme
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(2e2))
+                    type=int, default=int(5e2))
 # type=int, default=int(10))
 parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
                                                     'Recommended: int(5e3). Default: int(1e2).',
@@ -50,11 +50,13 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:0"
-with_test = True
+device_name = "cuda:1"
 device = torch.device(device_name)
+# torch.cuda.set_device(1)
+with_test = True
 
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
+# root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
 
 # all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is_signal_TPR_5%_FDR_50%',
@@ -74,12 +76,11 @@ if __name__ == '__main__':
     loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": False}
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.02,
-              "dataset": "phenotype_burden_375", "pos_weight_seq": 100, "pos_weight_rep": 1., "Branch": "HIV",
-              "dataset_type": "HIV/v2", "attention_temperature": 0, "best_pos": None, "best_neg": None,
-              "max_factor": None, "consider_seq_counts": False, "consider_seq_counts_after_cnn": False,
-              "consider_seq_counts_after_att": False, "consider_seq_counts_after_softmax": False,
-              "consider_seq_counts_before_maxpool": False, "add_positional_information": True, "per_for_tmp": 0,
-              "non_zeros_only": False}
+              "dataset": f"phenotype_burden_13", "pos_weight_seq": 100, "pos_weight_rep": 1.,
+              "Branch": "HIV", "dataset_type": "HIV/v6", "attention_temperature": 0,
+              "consider_seq_counts": False,
+              "add_positional_information": True, "per_for_tmp": 0,
+              "non_zeros_only": False, "n_training_samples": 360}
     # todo: when scaling with PDRC, I didn't use FPS and FPA. Try with them
     results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
     # strategy = "TE"
@@ -90,16 +91,12 @@ if __name__ == '__main__':
     # strategy = "F*G*E"
     strategy = "PDRC"
     # strategy = "SInS"
-    # if strategy == "PDRC":
     fpa, fps, wsw, wsi = False, False, False, False
     scaling_fn = no_sequence_count_scaling
-    # else:
-    #     fpa, fps, wsw, wsi = True, True, False, True  # True, True
-    #     scaling_fn = log_sequence_count_scaling_with_positive_increment
     config.update({"scaling_fn": scaling_fn})
     max_aucs = []
     seeds_list = [0, 1, 2]
-    seed = 2
+    seed = seeds_list[args.idx]
     # for seed in seeds_list:
     for used_sequence_labels in all_labels_columns:
         config.update({"used_sequence_labels": used_sequence_labels})
@@ -127,7 +124,7 @@ if __name__ == '__main__':
             with_test=with_test,
             force_pos_in_subsampling=fps,
             min_count=loss_config["min_cnt"],
-            max_factor=config["max_factor"]
+            n_training_samples=config["n_training_samples"],
         )
         dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval}
         if with_test:
@@ -153,10 +150,11 @@ if __name__ == '__main__':
         elif strategy == "UniAtt":
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                            "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": 10,
-                           "uniform_attention": True})  # currently not used
+                           "uniform_attention": True, "shift_by_factor": None})  # currently not used
         elif strategy == "F*G*E":
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": 100})
+                           "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": 100,
+                           "shift_by_factor": None})
         elif strategy == "SInS":  # shift inside softmax
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                            "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": None,
@@ -171,7 +169,7 @@ if __name__ == '__main__':
             torch.manual_seed(seed)
             np.random.seed(seed)
 
-            run = wandb.init(project="HIV - v2", group=f"{strategy}", reinit=True)
+            run = wandb.init(project="HIV - v6", group=f"{strategy}", reinit=True)
             run.name = f"results_idx_{str(seed)}"
 
             wandb.config.update(args)
@@ -197,11 +195,7 @@ if __name__ == '__main__':
             model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
                            attention_network=attention_network, output_network=output_network,
                            consider_seq_counts=config["consider_seq_counts"], n_input_features=20,
-                           consider_seq_counts_after_cnn=config["consider_seq_counts_after_cnn"],
                            add_positional_information=config["add_positional_information"], training_mode=True,
-                           consider_seq_counts_after_att=config["consider_seq_counts_after_att"],
-                           consider_seq_counts_after_softmax=config["consider_seq_counts_after_softmax"],
-                           consider_seq_counts_before_maxpool=config["consider_seq_counts_before_maxpool"],
                            sequence_reduction_fraction=config["sequence_reduction_fraction"],
                            reduction_mb_size=config["reduction_mb_size"], device=device,
                            forced_attention=config["forced_attention"], force_pos_in_attention=fpa,
