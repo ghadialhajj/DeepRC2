@@ -50,7 +50,7 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:1"
+device_name = "cuda:0"
 device = torch.device(device_name)
 # torch.cuda.set_device(1)
 with_test = True
@@ -76,7 +76,7 @@ if __name__ == '__main__':
     loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": False}
     config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
               "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.02,
-              "dataset": f"phenotype_burden_5", "pos_weight_seq": 100, "pos_weight_rep": 1.,
+              "dataset": f"phenotype_burden_13", "pos_weight_seq": 100, "pos_weight_rep": 1.,
               "Branch": "HIV", "dataset_type": "HIV/v6", "attention_temperature": 0,
               "consider_seq_counts": False,
               "add_positional_information": True, "per_for_tmp": 0,
@@ -96,7 +96,8 @@ if __name__ == '__main__':
     config.update({"scaling_fn": scaling_fn})
     max_aucs = []
     seeds_list = [0, 1, 2]
-    seed = seeds_list[args.idx]
+    # seed = seeds_list[args.idx]
+    seed = 0
     # for seed in seeds_list:
     for used_sequence_labels in all_labels_columns:
         config.update({"used_sequence_labels": used_sequence_labels})
@@ -133,7 +134,8 @@ if __name__ == '__main__':
 
         if strategy == "TE":
             config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                           "plain_DeepRC": False, "rep_loss_only": False, "mul_att_by_factor": False})
+                           "plain_DeepRC": False, "rep_loss_only": False, "mul_att_by_factor": False,
+                           "shift_by_factor": None})
         elif strategy == "TASTE":
             config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
                            "plain_DeepRC": False, "rep_loss_only": False, "mul_att_by_factor": False})
