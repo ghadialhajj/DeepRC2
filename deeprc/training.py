@@ -55,7 +55,7 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
             model, dataloader,
             show_progress,
             device)
-        all_true_seq_targets = torch.Tensor([s < 2 for s in all_seq_targets]).to(device)
+        all_true_seq_targets = torch.Tensor([s > 2 for s in all_seq_targets]).to(device)
         scores = task_definition.get_scores(raw_outputs=all_logits, targets=all_targets)
         sequence_scores = task_definition.get_sequence_scores(raw_attentions=all_attentions.squeeze(),
                                                               sequence_targets=all_true_seq_targets,
@@ -190,9 +190,9 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                                       desc=f"loss={np.nan:6.4f}")
             second_phase = False
             while update < n_updates:
-                if update == 500:
-                    evaluate_at = 500
                 for data in trainingset_dataloader:
+                    if update == 5:
+                        evaluate_at = 500
                     if update == int(prop * n_updates) and staged_training:
                         second_phase = True
                         if train_then_freeze:
@@ -201,8 +201,6 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
                     # Get samples as lists
                     targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence, sample_ids = data
-                    tensor_list_copy = [tensor.clone() for tensor in
-                                        inputs]  # Apply attention-based sequence reduction and create minibatch
                     with torch.no_grad():
                         targets, inputs, sequence_lengths, sequence_counts, sequence_labels, sequence_pools, n_sequences, sequence_attentions = \
                             model.reduce_and_stack_minibatch(
