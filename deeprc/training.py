@@ -191,7 +191,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
             second_phase = False
             while update < n_updates:
                 for data in trainingset_dataloader:
-                    if update == 5:
+                    if update == 500:
                         evaluate_at = 500
                     if update == int(prop * n_updates) and staged_training:
                         second_phase = True
