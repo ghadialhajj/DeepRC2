@@ -28,12 +28,12 @@ from deeprc.training import ESException
 #
 parser = argparse.ArgumentParser()
 parser.add_argument('--n_updates', help='Number of updates to train for. Recommended: int(1e5). Default: int(1e3)',
-                    type=int, default=int(20e3))
+                    type=int, default=int(30e3))
 # type=int, default=int(100))
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(5e1))
+                    type=int, default=int(1e1))
 # type=int, default=int(10))
 parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
                                                     'Recommended: int(5e3). Default: int(1e2).',
@@ -55,8 +55,8 @@ device = torch.device(device_name)
 # torch.cuda.set_device(1)
 with_test = True
 
-# root_dir = "/storage/ghadia/DeepRC2/deeprc"
-root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
+root_dir = "/storage/ghadia/DeepRC2/deeprc"
+# root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
 
 # all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is_signal_TPR_5%_FDR_50%',
@@ -73,11 +73,11 @@ base_results_dir = "/results/singletask_cnn/ideal"
 all_labels_columns = ['is_signal_TPR_20%_FDR_50%']
 
 if __name__ == '__main__':
-    for n_training_samples in [12, 48, 96, 180, 360]:
+    for n_training_samples in [360]:
         loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": False}
         config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
                   "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.02,
-                  "dataset": f"phenotype_burden_50", "pos_weight_seq": 100, "pos_weight_rep": 1.,
+                  "dataset": f"phenotype_burden_500", "pos_weight_seq": 100, "pos_weight_rep": 1.,
                   "Branch": "HIV", "dataset_type": "HIV/v6", "attention_temperature": 0,
                   "consider_seq_counts": False,
                   "add_positional_information": True, "per_for_tmp": 0,
@@ -89,7 +89,8 @@ if __name__ == '__main__':
         # strategy = "TASTE"
         # strategy = "TASTER"
         # strategy = "UniAtt"
-        strategy = "F*G*E"
+        # strategy = "F*G*E"
+        strategy = "FE"
         # strategy = "PDRC"
         # strategy = "SInS"
         fpa, fps, wsw, wsi = False, False, False, False
@@ -136,43 +137,34 @@ if __name__ == '__main__':
             if strategy == "TE":
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                                "plain_DeepRC": False, "rep_loss_only": False, "mul_att_by_factor": False,
-                               "shift_by_factor": None})
-            elif strategy == "TASTE":
-                config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
-                               "plain_DeepRC": False, "rep_loss_only": False, "mul_att_by_factor": False})
-            elif strategy == "TASTER":
-                config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
-                               "plain_DeepRC": False, "rep_loss_only": True, "mul_att_by_factor": False})
+                               "shift_by_factor": None, "use_softmax": True, "factor_as_attention": None})
             elif strategy == "FG":
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": True,
-                               "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": False})
+                               "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": False,
+                               "use_softmax": True, "factor_as_attention": None})
             elif strategy == "PDRC":
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                                "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": False,
-                               "shift_by_factor": None})
-            elif strategy == "UniAtt":
-                config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                               "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": 10,
-                               "uniform_attention": True, "shift_by_factor": None})  # currently not used
+                               "shift_by_factor": None, "use_softmax": True, "factor_as_attention": None})
+            elif strategy == "FE":
+                config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": True,
+                               "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": None,
+                               "use_softmax": False, "shift_by_factor": None, "factor_as_attention": 100})
             elif strategy == "F*G*E":
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                                "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": 100,
-                               "shift_by_factor": None})
+                               "shift_by_factor": None, "use_softmax": True, "factor_as_attention": None})
             elif strategy == "SInS":  # shift inside softmax
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                                "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": None,
-                               "shift_by_factor": 10})
-            elif strategy == "TEOR":
-                config.update({"train_then_freeze": False, "staged_training": True, "forced_attention": False,
-                               "plain_DeepRC": False, "rep_loss_only": True, "mul_att_by_factor": False})
+                               "shift_by_factor": 10, "factor_as_attention": None})
             else:
                 raise "Invalid strategy"
             try:
-                # Set random seed (will still be non-deterministic due to multiprocessing but weight init will be the same)
                 torch.manual_seed(seed)
                 np.random.seed(seed)
 
-                run = wandb.init(project="HIV - v6", group=f"{strategy}", reinit=True)
+                run = wandb.init(project="HIV - v7", group=f"{strategy}", reinit=True, tags=["correct_SLE"])
                 run.name = f"results_idx_{str(seed)}"
 
                 wandb.config.update(args)
@@ -202,17 +194,21 @@ if __name__ == '__main__':
                                sequence_reduction_fraction=config["sequence_reduction_fraction"],
                                reduction_mb_size=config["reduction_mb_size"], device=device,
                                forced_attention=config["forced_attention"], force_pos_in_attention=fpa,
-                               temperature=config["attention_temperature"], mul_att_by_factor=config["mul_att_by_factor"],
+                               temperature=config["attention_temperature"], use_softmax=config["use_softmax"],
+                               mul_att_by_factor=config["mul_att_by_factor"],
+                               factor_as_attention=config["factor_as_attention"],
                                per_for_tmp=config["per_for_tmp"], shift_by_factor=config["shift_by_factor"]).to(
                     device=device)
 
                 max_auc = train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
                                 trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
-                                early_stopping_target_id='label_positive', validationset_eval_dataloader=validationset_eval,
+                                early_stopping_target_id='label_positive',
+                                validationset_eval_dataloader=validationset_eval,
                                 logger=logger, n_updates=args.n_updates, evaluate_at=args.evaluate_at, device=device,
                                 results_directory=f"{root_dir}{results_dir}", prop=config["prop"],
-                                log_training_stats_at=args.log_training_stats_at,
-                                train_then_freeze=config["train_then_freeze"], staged_training=config["staged_training"],
+                                log_training_stats_at=args.log_training_stats_at, testset_eval_dataloader=testset_eval,
+                                train_then_freeze=config["train_then_freeze"],
+                                staged_training=config["staged_training"],
                                 plain_DeepRC=config["plain_DeepRC"], log=True, rep_loss_only=config["rep_loss_only"],
                                 config=config, loss_config=loss_config)
 
@@ -221,14 +217,14 @@ if __name__ == '__main__':
                 #
                 # Evaluate trained model on testset
                 #
-                if with_test:
-                    assert not model.training_mode, "Model is in training mode!"
-                    scores, sequence_scores = evaluate(model=model, dataloader=testset_eval,
-                                                       task_definition=task_definition,
-                                                       device=device)
-                    wandb.run.summary.update(scores["label_positive"])
-                    wandb.run.summary.update(sequence_scores["sequence_class"])
-                    print(f"Test scores:\n{scores}")
+                # if with_test:
+                #     assert not model.training_mode, "Model is in training mode!"
+                #     scores, sequence_scores = evaluate(model=model, dataloader=testset_eval,
+                #                                        task_definition=task_definition,
+                #                                        device=device)
+                #     wandb.run.summary.update(scores["label_positive"])
+                #     wandb.run.summary.update(sequence_scores["sequence_class"])
+                #     print(f"Test scores:\n{scores}")
                 wandb.finish()
             except ValueError as ve:
                 print("Error: ", ve)
