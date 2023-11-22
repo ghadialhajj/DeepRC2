@@ -28,12 +28,12 @@ from deeprc.training import ESException
 #
 parser = argparse.ArgumentParser()
 parser.add_argument('--n_updates', help='Number of updates to train for. Recommended: int(1e5). Default: int(1e3)',
-                    type=int, default=int(30e3))
+                    type=int, default=int(20e3))
 # type=int, default=int(100))
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(1e1))
+                    type=int, default=int(2e2))
 # type=int, default=int(10))
 parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
                                                     'Recommended: int(5e3). Default: int(1e2).',
@@ -50,7 +50,7 @@ parser.add_argument('--idx', help='Index of the run. Default: 0.',
 
 args = parser.parse_args()
 # Set computation device
-device_name = "cuda:0"
+device_name = "cuda:1"
 device = torch.device(device_name)
 # torch.cuda.set_device(1)
 with_test = True
@@ -77,7 +77,7 @@ if __name__ == '__main__':
         loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": False}
         config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
                   "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.02,
-                  "dataset": f"phenotype_burden_500", "pos_weight_seq": 100, "pos_weight_rep": 1.,
+                  "dataset": f"phenotype_burden_25", "pos_weight_seq": 100, "pos_weight_rep": 1.,
                   "Branch": "HIV", "dataset_type": "HIV/v6", "attention_temperature": 0,
                   "consider_seq_counts": False,
                   "add_positional_information": True, "per_for_tmp": 0,
@@ -88,9 +88,9 @@ if __name__ == '__main__':
         # strategy = "FG"
         # strategy = "TASTE"
         # strategy = "TASTER"
-        # strategy = "UniAtt"
+        strategy = "AP"
         # strategy = "F*G*E"
-        strategy = "FE"
+        # strategy = "FE"
         # strategy = "PDRC"
         # strategy = "SInS"
         fpa, fps, wsw, wsi = False, False, False, False
@@ -137,34 +137,45 @@ if __name__ == '__main__':
             if strategy == "TE":
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                                "plain_DeepRC": False, "rep_loss_only": False, "mul_att_by_factor": False,
-                               "shift_by_factor": None, "use_softmax": True, "factor_as_attention": None})
+                               "shift_by_factor": None, "use_softmax": True, "factor_as_attention": None,
+                               "average_pooling": False})
             elif strategy == "FG":
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": True,
                                "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": False,
-                               "use_softmax": True, "factor_as_attention": None})
+                               "use_softmax": True, "factor_as_attention": None,
+                               "average_pooling": False})
             elif strategy == "PDRC":
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                                "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": False,
-                               "shift_by_factor": None, "use_softmax": True, "factor_as_attention": None})
+                               "shift_by_factor": None, "use_softmax": True, "factor_as_attention": None,
+                               "average_pooling": False})
             elif strategy == "FE":
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": True,
                                "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": None,
-                               "use_softmax": False, "shift_by_factor": None, "factor_as_attention": 100})
+                               "use_softmax": False, "shift_by_factor": None, "factor_as_attention": 100,
+                               "average_pooling": False})
+            elif strategy == "AP":
+                config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
+                               "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": None,
+                               "use_softmax": True, "shift_by_factor": None, "factor_as_attention": 0,
+                               "average_pooling": True})
             elif strategy == "F*G*E":
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                                "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": 100,
-                               "shift_by_factor": None, "use_softmax": True, "factor_as_attention": None})
+                               "shift_by_factor": None, "use_softmax": True, "factor_as_attention": None,
+                               "average_pooling": False})
             elif strategy == "SInS":  # shift inside softmax
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                                "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": None,
-                               "shift_by_factor": 10, "factor_as_attention": None})
+                               "shift_by_factor": 10, "factor_as_attention": None,
+                               "average_pooling": False})
             else:
                 raise "Invalid strategy"
             try:
                 torch.manual_seed(seed)
                 np.random.seed(seed)
 
-                run = wandb.init(project="HIV - v7", group=f"{strategy}", reinit=True, tags=["correct_SLE"])
+                run = wandb.init(project="HIV - v6", group=f"{strategy}", reinit=True, tags=["correct_SLE"])
                 run.name = f"results_idx_{str(seed)}"
 
                 wandb.config.update(args)
@@ -195,7 +206,7 @@ if __name__ == '__main__':
                                reduction_mb_size=config["reduction_mb_size"], device=device,
                                forced_attention=config["forced_attention"], force_pos_in_attention=fpa,
                                temperature=config["attention_temperature"], use_softmax=config["use_softmax"],
-                               mul_att_by_factor=config["mul_att_by_factor"],
+                               mul_att_by_factor=config["mul_att_by_factor"], average_pooling=config["average_pooling"],
                                factor_as_attention=config["factor_as_attention"],
                                per_for_tmp=config["per_for_tmp"], shift_by_factor=config["shift_by_factor"]).to(
                     device=device)
