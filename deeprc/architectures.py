@@ -275,7 +275,7 @@ class DeepRC(nn.Module):
                  device: torch.device = torch.device('cuda:0'), forced_attention: bool = True,
                  force_pos_in_attention=True, training_mode: bool = True, temperature: float = 0.01,
                  mul_att_by_factor: int = 1, per_for_tmp: float = 0.75, shift_by_factor=0,
-                 use_softmax=True, factor_as_attention=0):
+                 use_softmax=True, factor_as_attention=0, average_pooling=False):
         """DeepRC network as described in paper
         
         Apply `.reduce_and_stack_minibatch()` to reduce number of sequences by `sequence_reduction_fraction`
@@ -337,6 +337,7 @@ class DeepRC(nn.Module):
         self.temperature = temperature
         self.per_for_tmp = per_for_tmp
         self.mul_att_by_factor = mul_att_by_factor
+        self.average_pooling = average_pooling
         self.shift_by_factor = shift_by_factor
         self.use_softmax = use_softmax
         self.factor_as_attention = factor_as_attention
@@ -477,6 +478,8 @@ class DeepRC(nn.Module):
         # Calculate attention weights f() before softmax function for all bags in mb (shape: (d_k, 1))
         if self.forced_attention or self.factor_as_attention:
             mb_attention_weights = sequence_labels[:, None]
+        elif self.average_pooling:
+            mb_attention_weights = torch.ones_like(sequence_labels[:, None]) * 0.5
         else:
             mb_attention_weights = self.attention_nn(mb_emb_seqs)
 
