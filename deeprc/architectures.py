@@ -274,7 +274,8 @@ class DeepRC(nn.Module):
                  sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
                  device: torch.device = torch.device('cuda:0'), forced_attention: bool = True,
                  force_pos_in_attention=True, training_mode: bool = True, temperature: float = 0.01,
-                 mul_att_by_factor: int = 1, per_for_tmp: float = 0.75, shift_by_factor=0):
+                 mul_att_by_factor: int = 1, per_for_tmp: float = 0.75, shift_by_factor=0,
+                 use_softmax=True, factor_as_attention=0):
         """DeepRC network as described in paper
         
         Apply `.reduce_and_stack_minibatch()` to reduce number of sequences by `sequence_reduction_fraction`
@@ -337,6 +338,8 @@ class DeepRC(nn.Module):
         self.per_for_tmp = per_for_tmp
         self.mul_att_by_factor = mul_att_by_factor
         self.shift_by_factor = shift_by_factor
+        self.use_softmax = use_softmax
+        self.factor_as_attention = factor_as_attention
 
         # sequence embedding network (h())
         if sequence_embedding_as_16_bit:
@@ -472,10 +475,8 @@ class DeepRC(nn.Module):
         if self.consider_seq_counts_after_cnn:
             mb_emb_seqs = mb_emb_seqs * sequence_counts.unsqueeze(1)
         # Calculate attention weights f() before softmax function for all bags in mb (shape: (d_k, 1))
-        if self.forced_attention:
+        if self.forced_attention or self.factor_as_attention:
             mb_attention_weights = sequence_labels[:, None]
-        # elif self.mul_att_by_factor:
-        #     mb_attention_weights = torch.ones_like(sequence_labels[:, None]) / len(sequence_labels)
         else:
             mb_attention_weights = self.attention_nn(mb_emb_seqs)
 
@@ -495,10 +496,14 @@ class DeepRC(nn.Module):
             if self.shift_by_factor:
                 attention_weights = (attention_weights + sequence_labels[start_i:start_i + n_seqs].reshape(-1, 1)
                                      * self.shift_by_factor)
-            attention_weights = torch.softmax(attention_weights, dim=0)
+            if self.use_softmax:
+                attention_weights = torch.softmax(attention_weights, dim=0)
             if self.mul_att_by_factor:
                 attention_weights = attention_weights * (sequence_labels[start_i:start_i + n_seqs] * (
                         self.mul_att_by_factor - 1) + 1).unsqueeze(1)
+            if self.factor_as_attention:
+                attention_weights = (sequence_labels[start_i:start_i + n_seqs] * (
+                        self.factor_as_attention - 1) + 1).unsqueeze(1)
             if self.consider_seq_counts_after_softmax:
                 attention_weights = attention_weights * sequence_counts[start_i:start_i + n_seqs].reshape(-1, 1)
             # Apply attention weights to sequence features (shape: (n_sequences_per_bag, d_v))
@@ -630,7 +635,7 @@ class DeepRC(nn.Module):
                                                    sequence_lengths=sequence_lengths_mb).to(dtype=torch.float32)
 
                 # Calculate attention weights before softmax (f())
-                if self.forced_attention:
+                if self.forced_attention or self.factor_as_attention:
                     attention_acts.append(sequence_labels_mb)
                 else:
                     attention_acts.append(self.attention_nn(emb_seqs).squeeze(dim=-1))
