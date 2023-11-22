@@ -55,7 +55,7 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
             model, dataloader,
             show_progress,
             device)
-        all_true_seq_targets = torch.Tensor([s > 2 for s in all_seq_targets]).to(device)
+        all_true_seq_targets = torch.Tensor([s > 2 for s in all_pools]).to(device)
         scores = task_definition.get_scores(raw_outputs=all_logits, targets=all_targets)
         sequence_scores = task_definition.get_sequence_scores(raw_attentions=all_attentions.squeeze(),
                                                               sequence_targets=all_true_seq_targets,
@@ -68,6 +68,7 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
 def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stopping_target_id: str,
           trainingset_dataloader: torch.utils.data.DataLoader, trainingset_eval_dataloader: torch.utils.data.DataLoader,
           validationset_eval_dataloader: torch.utils.data.DataLoader, logger: Logger,
+          testset_eval_dataloader: torch.utils.data.DataLoader,
           results_directory: str = "results", n_updates: int = int(1e5), show_progress: bool = True,
           load_file: str = None, device: torch.device = torch.device('cuda:1'),
           num_torch_threads: int = 4, learning_rate: float = 1e-4, l1_weight_decay: float = 0,
@@ -183,7 +184,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
         #
         log_scores(device, early_stopping, early_stopping_target_id, logger,
                    model, task_definition, tprint, trainingset_eval_dataloader,
-                   update, validationset_eval_dataloader)
+                   update, validationset_eval_dataloader, testset_eval_dataloader)
         try:
             tprint("Training model...")
             update_progess_bar = tqdm(total=n_updates, disable=not show_progress, position=0,
@@ -289,7 +290,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     if update % evaluate_at == 0 or update == n_updates:
                         scores, scoring_loss = log_scores(device, early_stopping, early_stopping_target_id, logger,
                                                           model, task_definition, tprint, trainingset_eval_dataloader,
-                                                          update, validationset_eval_dataloader)
+                                                          update, validationset_eval_dataloader, testset_eval_dataloader)
 
                         # If we have a new best loss on the validation set, we save the model as new best model
                         if scores[early_stopping_target_id]['roc_auc'] > max_auc:
@@ -337,7 +338,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
 
 def log_scores(device, early_stopping, early_stopping_target_id, logger, model, task_definition, tprint,
-               trainingset_eval_dataloader, update, validationset_eval_dataloader):
+               trainingset_eval_dataloader, update, validationset_eval_dataloader, testset_eval_dataloader):
     model.training_mode = False
     print("  Calculating training score...")
     scores, sequence_scores = evaluate(model=model,
@@ -353,25 +354,35 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
     for task_id, task_scores in sequence_scores.items():
         [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
          for score_name, score in task_scores.items()]
-    # logger.log_stats(model, step=update, log_and_att_hists=True, device=device,
-    #                  desired_dl_name="trainingset_eval")
+
     print("  Calculating validation score...")
     scores, sequence_scores = evaluate(model=model, dataloader=validationset_eval_dataloader,
                                        task_definition=task_definition, device=device)
     scoring_loss = scores[early_stopping_target_id]['loss']
     early_stopping(scoring_loss, model)
-    print(f" ...done!")
+
     tprint(f"[validation] u: {update:07d}; scores: {scores};")
     group = 'validation/'
     for task_id, task_scores in scores.items():
         [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
          for score_name, score in task_scores.items()]
-        # if task_scores["roc_auc"] > 0.7:
-        #     optimizer.param_groups[0]["lr"] = 1e-5
     for task_id, task_scores in sequence_scores.items():
         [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
          for score_name, score in task_scores.items()]
     logger.log_stats(model, step=update, att_hists=True, device=device,
                      desired_dl_name="validationset_eval")
+
+    print("  Calculating test score...")
+    scores, sequence_scores = evaluate(model=model, dataloader=testset_eval_dataloader,
+                                       task_definition=task_definition, device=device)
+    tprint(f"[test] u: {update:07d}; scores: {scores};")
+    group = 'test/'
+    for task_id, task_scores in scores.items():
+        [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
+         for score_name, score in task_scores.items()]
+    for task_id, task_scores in sequence_scores.items():
+        [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
+         for score_name, score in task_scores.items()]
+
     model.training_mode = True
     return scores, scoring_loss
