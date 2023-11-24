@@ -228,14 +228,14 @@ if __name__ == '__main__':
                 #
                 # Evaluate trained model on testset
                 #
-                # if with_test:
-                #     assert not model.training_mode, "Model is in training mode!"
-                #     scores, sequence_scores = evaluate(model=model, dataloader=testset_eval,
-                #                                        task_definition=task_definition,
-                #                                        device=device)
-                #     wandb.run.summary.update(scores["label_positive"])
-                #     wandb.run.summary.update(sequence_scores["sequence_class"])
-                #     print(f"Test scores:\n{scores}")
+                if with_test:
+                    assert not model.training_mode, "Model is in training mode!"
+                    scores, sequence_scores = evaluate(model=model, dataloader=testset_eval,
+                                                       task_definition=task_definition,
+                                                       device=device)
+                    wandb.run.summary.update(scores["label_positive"])
+                    wandb.run.summary.update(sequence_scores["sequence_class"])
+                    print(f"Test scores:\n{scores}")
                 wandb.finish()
             except ValueError as ve:
                 print("Error: ", ve)
