@@ -88,9 +88,9 @@ if __name__ == '__main__':
         # strategy = "FG"
         # strategy = "TASTE"
         # strategy = "TASTER"
-        strategy = "AP"
+        # strategy = "AP"
         # strategy = "F*G*E"
-        # strategy = "FE"
+        strategy = "FE"
         # strategy = "PDRC"
         # strategy = "SInS"
         fpa, fps, wsw, wsi = False, False, False, False
@@ -221,7 +221,7 @@ if __name__ == '__main__':
                                 train_then_freeze=config["train_then_freeze"],
                                 staged_training=config["staged_training"],
                                 plain_DeepRC=config["plain_DeepRC"], log=True, rep_loss_only=config["rep_loss_only"],
-                                config=config, loss_config=loss_config)
+                                config=config, loss_config=loss_config, track_test=False)
 
                 # logger.log_stats(model=model, device=device, step=args.n_updates)
                 max_aucs.append(max_auc)
