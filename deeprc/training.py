@@ -75,7 +75,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
           l2_weight_decay: float = 0, log_training_stats_at: int = int(1e2), evaluate_at: int = int(5e3),
           ignore_missing_target_values: bool = True, prop: float = 0.7, train_then_freeze: bool = True,
           staged_training: bool = True, plain_DeepRC: bool = False, log: bool = True, rep_loss_only=False,
-          config: dict = {}, loss_config: dict = {}):
+          config: dict = {}, loss_config: dict = {}, track_test: bool = False):
     """Train a DeepRC model on a given dataset on tasks specified in `task_definition`
      
      Model with lowest validation set loss on target `early_stopping_target_id` will be taken as final model (=early
@@ -288,9 +288,11 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
                     # Calculate scores and loss on training set and validation set
                     if update % evaluate_at == 0 or update == n_updates:
+                        # if update in [10, 100, 1000, 5000, 10000, 15000, 20000] or update == n_updates:
                         scores, scoring_loss = log_scores(device, early_stopping, early_stopping_target_id, logger,
                                                           model, task_definition, tprint, trainingset_eval_dataloader,
-                                                          update, validationset_eval_dataloader, testset_eval_dataloader)
+                                                          update, validationset_eval_dataloader,
+                                                          testset_eval_dataloader, track_test=track_test)
 
                         # If we have a new best loss on the validation set, we save the model as new best model
                         if scores[early_stopping_target_id]['roc_auc'] > max_auc:
@@ -338,7 +340,8 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
 
 def log_scores(device, early_stopping, early_stopping_target_id, logger, model, task_definition, tprint,
-               trainingset_eval_dataloader, update, validationset_eval_dataloader, testset_eval_dataloader):
+               trainingset_eval_dataloader, update, validationset_eval_dataloader, testset_eval_dataloader,
+               track_test=False):
     model.training_mode = False
     print("  Calculating training score...")
     scores, sequence_scores = evaluate(model=model,
@@ -372,17 +375,18 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
     logger.log_stats(model, step=update, att_hists=True, device=device,
                      desired_dl_name="validationset_eval")
 
-    print("  Calculating test score...")
-    scores, sequence_scores = evaluate(model=model, dataloader=testset_eval_dataloader,
-                                       task_definition=task_definition, device=device)
-    tprint(f"[test] u: {update:07d}; scores: {scores};")
-    group = 'test/'
-    for task_id, task_scores in scores.items():
-        [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
-         for score_name, score in task_scores.items()]
-    for task_id, task_scores in sequence_scores.items():
-        [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
-         for score_name, score in task_scores.items()]
+    if track_test:
+        print("  Calculating test score...")
+        scores, sequence_scores = evaluate(model=model, dataloader=testset_eval_dataloader,
+                                           task_definition=task_definition, device=device)
+        tprint(f"[test] u: {update:07d}; scores: {scores};")
+        group = 'test/'
+        for task_id, task_scores in scores.items():
+            [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
+             for score_name, score in task_scores.items()]
+        for task_id, task_scores in sequence_scores.items():
+            [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
+             for score_name, score in task_scores.items()]
 
     model.training_mode = True
     return scores, scoring_loss
