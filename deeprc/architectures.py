@@ -442,7 +442,7 @@ class DeepRC(nn.Module):
             mb_reduced_sequence_labels, mb_reduced_sequence_pools, mb_n_sequences, mb_reduced_sequence_attentions
 
     def forward(self, inputs_flat, sequence_lengths_flat, n_sequences_per_bag,
-                sequence_counts, sequence_labels, sequence_attentions):
+                sequence_counts, sequence_labels):
         """ Apply DeepRC (see Fig.2 in paper)
         
         Parameters
@@ -476,9 +476,9 @@ class DeepRC(nn.Module):
         if self.consider_seq_counts_after_cnn:
             mb_emb_seqs = mb_emb_seqs * sequence_counts.unsqueeze(1)
         # Calculate attention weights f() before softmax function for all bags in mb (shape: (d_k, 1))
-        if self.forced_attention or self.factor_as_attention:
+        if self.forced_attention:
             mb_attention_weights = sequence_labels[:, None]
-        elif self.average_pooling:
+        elif self.average_pooling or self.factor_as_attention:
             mb_attention_weights = torch.ones_like(sequence_labels[:, None]) * 0.5
         else:
             mb_attention_weights = self.attention_nn(mb_emb_seqs)
