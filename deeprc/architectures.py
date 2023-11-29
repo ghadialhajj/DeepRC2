@@ -479,7 +479,7 @@ class DeepRC(nn.Module):
         if self.forced_attention:
             mb_attention_weights = sequence_labels[:, None]
         elif self.average_pooling or self.factor_as_attention:
-            mb_attention_weights = torch.ones_like(sequence_labels[:, None]) * 0.5
+            mb_attention_weights = torch.zeros_like(sequence_labels[:, None])
         else:
             mb_attention_weights = self.attention_nn(mb_emb_seqs)
 

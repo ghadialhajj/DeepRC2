@@ -152,7 +152,7 @@ if __name__ == '__main__':
             elif strategy == "FE":
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                                "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": None,
-                               "use_softmax": False, "shift_by_factor": None, "factor_as_attention": 100,
+                               "use_softmax": True, "shift_by_factor": None, "factor_as_attention": 100,
                                "average_pooling": False})
             elif strategy == "AP":
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
