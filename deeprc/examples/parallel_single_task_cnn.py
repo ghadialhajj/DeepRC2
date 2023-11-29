@@ -150,14 +150,14 @@ if __name__ == '__main__':
                                "shift_by_factor": None, "use_softmax": True, "factor_as_attention": None,
                                "average_pooling": False})
             elif strategy == "FE":
-                config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": True,
+                config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                                "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": None,
                                "use_softmax": False, "shift_by_factor": None, "factor_as_attention": 100,
                                "average_pooling": False})
             elif strategy == "AP":
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
                                "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": None,
-                               "use_softmax": True, "shift_by_factor": None, "factor_as_attention": 0,
+                               "use_softmax": True, "shift_by_factor": None, "factor_as_attention": None,
                                "average_pooling": True})
             elif strategy == "F*G*E":
                 config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
@@ -175,7 +175,7 @@ if __name__ == '__main__':
                 torch.manual_seed(seed)
                 np.random.seed(seed)
 
-                run = wandb.init(project="HIV - v6", group=f"{strategy}", reinit=True, tags=["correct_SLE"])
+                run = wandb.init(project="HIV - v7", group=f"{strategy}", reinit=True, tags=["correct_SLE"])
                 run.name = f"results_idx_{str(seed)}"
 
                 wandb.config.update(args)
