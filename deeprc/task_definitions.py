@@ -179,6 +179,7 @@ class Sequence_Target(torch.nn.Module):
         self.weigh_seq_by_weight = weigh_seq_by_weight
         self.normalize = normalize
         self.add_in_loss = add_in_loss
+        self.classes_dict = {1: "HnW", 2: "LW", 3: "HW"}
         # self.binary_cross_entropy_loss = torch.nn.BCEWithLogitsLoss(reduction='mean',
         #                                                             pos_weight=torch.tensor(pos_weight))
 
@@ -288,7 +289,7 @@ class Sequence_Target(torch.nn.Module):
         # loss = torch.sum(loss)/torch.count_nonzero(loss)
         return loss
 
-    def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor, sequence_counts: torch.Tensor,
+    def get_scores(self, raw_outputs: torch.Tensor, sequence_pools: torch.Tensor, sequence_counts: torch.Tensor,
                    n_sequences: torch.Tensor) -> dict:
         """Get scores for this task as dictionary containing AUC, BACC, F1, and loss
 
@@ -306,12 +307,11 @@ class Sequence_Target(torch.nn.Module):
         scores: dict
             Dictionary of format `{score_id: score_value}`, e.g. `{"avg_score_diff": 0.6, "loss": 0.01}`.
         """
-        # todo distinguish true vs assigned labels
+        targets = ((sequence_pools > 2) * 1).half()
         predictions = self.activation_function(raw_outputs=raw_outputs).detach()
         predictions_thresholded = (predictions > 0.5).float().cpu().numpy()
         predictions = predictions.float().cpu().numpy()
         labels = targets.detach().cpu().numpy()
-        # labels = (labels + 5) / 10
         avg_score_diff = 0
         attentions_neg = np.dot(np.logical_not(labels), predictions) / (len(labels) - sum(labels))
         if sum(labels):
@@ -327,11 +327,30 @@ class Sequence_Target(torch.nn.Module):
         loss = self.loss_function(raw_outputs=raw_outputs, targets=targets,
                                   sequence_counts=sequence_counts,
                                   n_sequences=n_sequences).detach().mean().cpu().item()
+        curves = self.plot_pr_curves(predictions, sequence_pools.detach().cpu().numpy())
+
         sm_raw_outputs = torch.softmax(raw_outputs, dim=-1)
         pos_percentage = torch.sum(sm_raw_outputs[targets == 1]) / torch.sum(sm_raw_outputs)
         # todo: report percentage
         return dict(seq_pr_auc=pr_auc, seq_roc_auc=roc_auc, seq_bacc=bacc, seq_f1=f1, seq_loss=loss,
-                    seq_avg_score_diff=avg_score_diff)
+                    seq_avg_score_diff=avg_score_diff, curves=curves, pos_percentage=pos_percentage)
+
+    def plot_pr_curves(self, predictions: np.ndarray, pools: np.ndarray):
+        curves = {}
+        for pos_ind in [1, 2, 3]:
+            curves[pos_ind] = self.plot_pr_curve(predictions=predictions, pools=pools, pos_class_ind=pos_ind)
+        return curves
+
+    def plot_pr_curve(self, predictions: np.ndarray, pools: np.ndarray, pos_class_ind: int):
+
+        filtered_array = np.array([(v1, v2) for v1, v2 in zip(predictions, pools) if v2 in [pos_class_ind, 0]])
+        predictions = filtered_array[:, 0]
+        pools = filtered_array[:, 1]
+        # Calculate precision-recall curve
+        fig = metrics.PrecisionRecallDisplay.from_predictions(pools, predictions, pos_label=pos_class_ind,
+                                                              plot_chance_level=True)
+        fig.ax_.set_title(f"PR curve for {self.classes_dict[pos_class_ind]}")
+        return fig
 
     def get_id(self) -> str:
         """Get target ID as string"""
@@ -851,7 +870,7 @@ class TaskDefinition(torch.nn.Module):
                        for s, t in zip(self.__targets_slices__, self.__repertoire_targets__)])
         return scores
 
-    def get_sequence_scores(self, raw_attentions: torch.Tensor, sequence_targets: torch.Tensor,
+    def get_sequence_scores(self, raw_attentions: torch.Tensor, sequence_pools: torch.Tensor,
                             sequence_counts: torch.Tensor, n_sequences) -> dict:
         """Get scores for this task as dictionary
 
@@ -873,7 +892,7 @@ class TaskDefinition(torch.nn.Module):
             `deeprc.task_definitions.BinaryTarget()`).
             See `deeprc/examples/` for examples.
         """
-        scores = dict([(t.get_id(), t.get_scores(raw_outputs=raw_attentions, targets=sequence_targets,
+        scores = dict([(t.get_id(), t.get_scores(raw_outputs=raw_attentions, sequence_pools=sequence_pools,
                                                  sequence_counts=sequence_counts, n_sequences=n_sequences)) for t in
                        self.__sequence_targets__])
         return scores

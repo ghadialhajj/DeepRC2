@@ -55,10 +55,9 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
             model, dataloader,
             show_progress,
             device)
-        all_true_seq_targets = torch.Tensor([s > 2 for s in all_pools]).to(device)
         scores = task_definition.get_scores(raw_outputs=all_logits, targets=all_targets)
         sequence_scores = task_definition.get_sequence_scores(raw_attentions=all_attentions.squeeze(),
-                                                              sequence_targets=all_true_seq_targets,
+                                                              sequence_pools=all_pools,
                                                               sequence_counts=all_seq_counts,
                                                               n_sequences=all_n_sequences)
 
@@ -215,7 +214,6 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                                                                 sequence_lengths_flat=sequence_lengths,
                                                                 n_sequences_per_bag=n_sequences,
                                                                 sequence_counts=sequence_counts,
-                                                                sequence_attentions=sequence_attentions,
                                                                 sequence_labels=sequence_labels)
 
                     # Calculate losses
@@ -354,9 +352,12 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
     for task_id, task_scores in scores.items():
         [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
          for score_name, score in task_scores.items()]
+    curves = sequence_scores['sequence_class'].pop('curves')
     for task_id, task_scores in sequence_scores.items():
         [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
          for score_name, score in task_scores.items()]
+        [wandb.log({f"{group}{task_id}/{id}": wandb.Image(curve.figure_)}, step=update)
+         for id, curve in curves.items()]
 
     print("  Calculating validation score...")
     scores, sequence_scores = evaluate(model=model, dataloader=validationset_eval_dataloader,
@@ -369,9 +370,13 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
     for task_id, task_scores in scores.items():
         [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
          for score_name, score in task_scores.items()]
+    curves = sequence_scores['sequence_class'].pop('curves')
     for task_id, task_scores in sequence_scores.items():
         [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
          for score_name, score in task_scores.items()]
+        [wandb.log({f"{group}{task_id}/{id}": wandb.Image(curve.figure_)}, step=update)
+         for id, curve in curves.items()]
+
     logger.log_stats(model, step=update, att_hists=True, device=device,
                      desired_dl_name="validationset_eval")
 
@@ -384,9 +389,12 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
         for task_id, task_scores in scores.items():
             [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
              for score_name, score in task_scores.items()]
+        curves = sequence_scores['sequence_class'].pop('curves')
         for task_id, task_scores in sequence_scores.items():
             [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
              for score_name, score in task_scores.items()]
+            [wandb.log({f"{group}{task_id}/{id}": wandb.Image(curve.figure_)}, step=update)
+             for id, curve in curves.items()]
 
     model.training_mode = True
     return scores, scoring_loss
