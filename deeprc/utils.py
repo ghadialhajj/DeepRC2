@@ -259,7 +259,6 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
                                                                              sequence_lengths_flat=sequence_lengths,
                                                                              n_sequences_per_bag=n_sequences,
                                                                              sequence_counts=sequence_counts,
-                                                                             sequence_attentions=sequence_attentions,
                                                                              sequence_labels=sequence_labels)
 
             # Store predictions and labels
