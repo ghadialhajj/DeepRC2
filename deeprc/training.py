@@ -356,7 +356,7 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
     for task_id, task_scores in sequence_scores.items():
         [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
          for score_name, score in task_scores.items()]
-        [wandb.log({f"{group}{task_id}/{id}": wandb.Image(curve.figure_)}, step=update)
+        [wandb.log({f"{group}{task_id}_plots/{id}": wandb.Image(curve.figure_)}, step=update)
          for id, curve in curves.items()]
 
     print("  Calculating validation score...")
@@ -374,7 +374,7 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
     for task_id, task_scores in sequence_scores.items():
         [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
          for score_name, score in task_scores.items()]
-        [wandb.log({f"{group}{task_id}/{id}": wandb.Image(curve.figure_)}, step=update)
+        [wandb.log({f"{group}{task_id}_plots/{id}": wandb.Image(curve.figure_)}, step=update)
          for id, curve in curves.items()]
 
     logger.log_stats(model, step=update, att_hists=True, device=device,
@@ -393,7 +393,7 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
         for task_id, task_scores in sequence_scores.items():
             [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
              for score_name, score in task_scores.items()]
-            [wandb.log({f"{group}{task_id}/{id}": wandb.Image(curve.figure_)}, step=update)
+            [wandb.log({f"{group}{task_id}_plots/{id}": wandb.Image(curve.figure_)}, step=update)
              for id, curve in curves.items()]
 
     model.training_mode = True
