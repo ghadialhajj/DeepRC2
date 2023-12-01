@@ -19,8 +19,7 @@ from deeprc.training import train, evaluate
 import wandb
 import os
 import datetime
-from deeprc.utils import Logger, get_split_inds, get_correct_indices, get_cherry_picked_inds, get_original_inds, \
-    get_splits_new_emerson
+from deeprc.utils import Logger
 from deeprc.training import ESException
 
 #
@@ -90,8 +89,8 @@ if __name__ == '__main__':
         # strategy = "TASTER"
         # strategy = "AP"
         # strategy = "F*G*E"
-        strategy = "FE"
-        # strategy = "PDRC"
+        # strategy = "FE"
+        strategy = "PDRC"
         # strategy = "SInS"
         fpa, fps, wsw, wsi = False, False, False, False
         scaling_fn = no_sequence_count_scaling
@@ -175,7 +174,8 @@ if __name__ == '__main__':
                 torch.manual_seed(seed)
                 np.random.seed(seed)
 
-                run = wandb.init(project="HIV - v7", group=f"{strategy}", reinit=True, tags=["correct_SLE"])
+                run = wandb.init(project="HIV - v7", group=f"{strategy}", reinit=True,
+                                 tags=["correct_SLE", "PRcurves", "log_test_once"])
                 run.name = f"results_idx_{str(seed)}"
 
                 wandb.config.update(args)
@@ -229,12 +229,19 @@ if __name__ == '__main__':
                 # Evaluate trained model on testset
                 #
                 if with_test:
+                    classes_dict = task_definition.__sequence_targets__[0].classes_dict
                     assert not model.training_mode, "Model is in training mode!"
                     scores, sequence_scores = evaluate(model=model, dataloader=testset_eval,
                                                        task_definition=task_definition,
                                                        device=device)
+                    curves = sequence_scores['sequence_class'].pop('curves')
                     wandb.run.summary.update(scores["label_positive"])
                     wandb.run.summary.update(sequence_scores["sequence_class"])
+                    for id, curve in curves.items():
+                        wandb.log({f"test/label_positive/PRC_{classes_dict[id]}": wandb.Image(curve.figure_)})
+                        wandb.run.summary.update({f"AP_{classes_dict[id]}": curve.average_precision,
+                                                  f"ranAP_{classes_dict[id]}": curve.prevalence_pos_label})
+
                     print(f"Test scores:\n{scores}")
                 wandb.finish()
             except ValueError as ve:
