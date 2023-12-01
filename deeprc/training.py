@@ -340,6 +340,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 def log_scores(device, early_stopping, early_stopping_target_id, logger, model, task_definition, tprint,
                trainingset_eval_dataloader, update, validationset_eval_dataloader, testset_eval_dataloader,
                track_test=False):
+    classes_dict = task_definition.__sequence_targets__[0].classes_dict
     model.training_mode = False
     print("  Calculating training score...")
     scores, sequence_scores = evaluate(model=model,
@@ -356,8 +357,10 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
     for task_id, task_scores in sequence_scores.items():
         [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
          for score_name, score in task_scores.items()]
-        [wandb.log({f"{group}{task_id}_plots/{id}": wandb.Image(curve.figure_)}, step=update)
-         for id, curve in curves.items()]
+        for id, curve in curves.items():
+            wandb.log({f"{group}{task_id}/PRC_{classes_dict[id]}": wandb.Image(curve.figure_),
+                       f"{group}{task_id}/AP_{classes_dict[id]}": curve.average_precision,
+                       f"{group}{task_id}/ranAP_{classes_dict[id]}": curve.prevalence_pos_label}, step=update)
 
     print("  Calculating validation score...")
     scores, sequence_scores = evaluate(model=model, dataloader=validationset_eval_dataloader,
@@ -374,8 +377,10 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
     for task_id, task_scores in sequence_scores.items():
         [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
          for score_name, score in task_scores.items()]
-        [wandb.log({f"{group}{task_id}_plots/{id}": wandb.Image(curve.figure_)}, step=update)
-         for id, curve in curves.items()]
+        for id, curve in curves.items():
+            wandb.log({f"{group}{task_id}/PRC_{classes_dict[id]}": wandb.Image(curve.figure_),
+                       f"{group}{task_id}/AP_{classes_dict[id]}": curve.average_precision,
+                       f"{group}{task_id}/ranAP_{classes_dict[id]}": curve.prevalence_pos_label}, step=update)
 
     logger.log_stats(model, step=update, att_hists=True, device=device,
                      desired_dl_name="validationset_eval")
@@ -393,8 +398,10 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
         for task_id, task_scores in sequence_scores.items():
             [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
              for score_name, score in task_scores.items()]
-            [wandb.log({f"{group}{task_id}_plots/{id}": wandb.Image(curve.figure_)}, step=update)
-             for id, curve in curves.items()]
+            for id, curve in curves.items():
+                wandb.log({f"{group}{task_id}/PRC_{classes_dict[id]}": wandb.Image(curve.figure_),
+                           f"{group}{task_id}/AP_{classes_dict[id]}": curve.average_precision,
+                           f"{group}{task_id}/ranAP_{classes_dict[id]}": curve.prevalence_pos_label}, step=update)
 
     model.training_mode = True
     return scores, scoring_loss
