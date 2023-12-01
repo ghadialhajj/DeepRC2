@@ -329,11 +329,8 @@ class Sequence_Target(torch.nn.Module):
                                   n_sequences=n_sequences).detach().mean().cpu().item()
         curves = self.plot_pr_curves(predictions, sequence_pools.detach().cpu().numpy())
 
-        sm_raw_outputs = torch.softmax(raw_outputs, dim=-1)
-        pos_percentage = torch.sum(sm_raw_outputs[targets == 1]) / torch.sum(sm_raw_outputs)
-        # todo: report percentage
         return dict(seq_pr_auc=pr_auc, seq_roc_auc=roc_auc, seq_bacc=bacc, seq_f1=f1, seq_loss=loss,
-                    seq_avg_score_diff=avg_score_diff, curves=curves, pos_percentage=pos_percentage)
+                    seq_avg_score_diff=avg_score_diff, curves=curves)
 
     def plot_pr_curves(self, predictions: np.ndarray, pools: np.ndarray):
         curves = {}
