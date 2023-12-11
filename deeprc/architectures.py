@@ -521,7 +521,7 @@ class DeepRC(nn.Module):
         # Calculate predictions (shape (N, n_outputs))
         predictions = self.output_nn(emb_reps_after_attention)
 
-        return predictions, emb_reps_after_attention
+        return predictions, mb_attention_weights, emb_reps_after_attention
 
     def get_temp(self, labels):
         assert not (self.temperature != 0 and self.per_for_tmp != 0), ("temperature and per_for_tmp cannot be set at "
