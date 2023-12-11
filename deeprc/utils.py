@@ -88,28 +88,26 @@ class Logger():
             wandb.log({f'Motifs/motif_{str(motif_idx)}': wandb.Image(fig)}, step=step)
             plt.close(fig)
 
-    def log_stats(self, model: torch.nn.Module, device=torch.device('cuda:0'), step: int = 0,
+    def log_stats(self, step: int, all_logits, all_targets, all_emb_reps, all_attentions, all_pools,
                   att_hists: bool = False, log_per_kernel: bool = False, logit_hist: bool = False,
-                  desired_dl_name: str = "trainingset_eval"):
+                  dl_name: str = "trainingset_eval"):
         """
         Logs model statistics including repertoire embeddings, logits, and attentions for each dataloader.
         """
         print("Logging stats:")
-        for dl_name, dl in self.dataloaders.items():
-            # if not dl.batch_sampler.sampler.data_source.indices.any():
-            #     continue
-            if dl_name != desired_dl_name:
-                continue
-            split_logits, split_attentions, split_rep_embs = self.get_values_per_dl(model, dl, device=device)
-            split_rep_embs_pca = perform_pca(split_rep_embs)
-            # split_rep_embs_tsne = perform_tsne(split_rep_embs)
-            self.log_repertoire_rep(dl_name, split_rep_embs_pca, None, step)
-            if att_hists:
-                self.log_attention(dl_name, split_attentions, step)
-            if logit_hist:
-                self.log_logits(dl_name, split_logits, step)
-            if log_per_kernel and dl_name == "validationset_eval":
-                self.log_per_kernel(split_rep_embs)
+        # if not dl.batch_sampler.sampler.data_source.indices.any():
+        #     continue
+        split_logits, split_attentions, split_rep_embs = self.get_values_per_dl(all_logits, all_targets, all_emb_reps,
+                                                                                all_attentions, all_pools)
+        split_rep_embs_pca = perform_pca(split_rep_embs)
+        # split_rep_embs_tsne = perform_tsne(split_rep_embs)
+        self.log_repertoire_rep(dl_name, split_rep_embs_pca, None, step)
+        if att_hists:
+            self.log_attention(dl_name, split_attentions, step)
+        if logit_hist:
+            self.log_logits(dl_name, split_logits, step)
+        if log_per_kernel and dl_name == "validationset_eval":
+            self.log_per_kernel(split_rep_embs)
 
     def log_repertoire_rep(self, dl_name, split_rep_embs_pca, split_rep_embs_tsne, step):
         self.plot_scatter(pos_vals=split_rep_embs_pca[0], neg_vals=split_rep_embs_pca[1], dl_name=dl_name,
@@ -127,30 +125,9 @@ class Logger():
                             plot_title=f"Positive (B) and Negative (R) Logits", xaxis_title="Logit value",
                             step=step)
 
-    def get_values_per_dl(self, model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
-                          show_progress: bool = True, device: torch.device = torch.device('cuda:0')):
-        """Compute DeepRC model scores on given dataset for tasks specified in `task_definition`
-
-        Parameters
-        ----------
-        model: torch.nn.Module
-             deeprc.architectures.DeepRC or similar model as PyTorch module
-        dataloader: torch.utils.data.DataLoader
-             Data loader for dataset to calculate scores on
-        show_progress: bool
-             Show progressbar?
-        device: torch.device
-             Device to use for computations. E.g. `torch.device('cuda:0')` or `torch.device('cpu')`.
-
-        Returns
-        ---------
-        scores: dict
-            Nested dictionary of format `{task_id: {score_id: score_value}}`, e.g.
-        """
-        (all_logits, all_targets, all_attentions, all_seq_targets, all_seq_pools, all_seq_counts, all_n_sequences,
-         all_emb_reps) = get_outputs(model=model, dataloader=dataloader, device=device, show_progress=show_progress)
+    def get_values_per_dl(self, all_logits, all_targets, all_emb_reps, all_attentions, all_pools):
         split_logits = self.split_outputs(all_logits, all_targets)
-        split_attentions = self.split_outputs(all_attentions, all_seq_pools, sequence_level=True)
+        split_attentions = self.split_outputs(all_attentions, all_pools, sequence_level=True)
         split_rep_embs = self.split_outputs(all_emb_reps, all_targets, flatten=False)
         return split_logits, split_attentions, split_rep_embs
 
@@ -233,7 +210,7 @@ class Logger():
             wandb.log({f'Per Kernel Activations/kernel_{str(kernel_idx)}': fig})
 
 
-def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
+def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, rep_level_eval: bool = True,
                 show_progress: bool = True, device: torch.device = torch.device('cuda:0')):
     with torch.no_grad():
         model.to(device=device)
@@ -242,35 +219,36 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
         all_targets = []
         all_attentions = []
         all_seq_targets = []
-        all_seq_pools = []
+        all_pools = []
         all_seq_counts = []
         all_n_sequences = []
-        all_sample_ids = []
         for scoring_data in tqdm(dataloader, total=len(dataloader), desc="Evaluating model", disable=not show_progress):
             # Get samples as lists
             targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence, sample_ids = scoring_data
 
             # Apply attention-based sequence reduction and create minibatch
             targets, inputs, sequence_lengths, sequence_counts, sequence_labels, sequence_pools, n_sequences, sequence_attentions = model.reduce_and_stack_minibatch(
-                targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence)
+                targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence,
+                attention_based=rep_level_eval)
 
-            # Compute predictions from reduced sequences
-            raw_outputs, attention_outputs, emb_reps_after_attention = model(inputs_flat=inputs,
-                                                                             sequence_lengths_flat=sequence_lengths,
-                                                                             n_sequences_per_bag=n_sequences,
-                                                                             sequence_counts=sequence_counts,
-                                                                             sequence_labels=sequence_labels)
+            if rep_level_eval:
+                # Compute predictions from reduced sequences
+                raw_outputs, emb_reps_after_attention = model(inputs_flat=inputs,
+                                                              sequence_lengths_flat=sequence_lengths,
+                                                              n_sequences_per_bag=n_sequences,
+                                                              sequence_counts=sequence_counts,
+                                                              sequence_labels=sequence_labels)
 
-            # Store predictions and labels
-            all_sample_ids.append(sample_ids)
-            all_logits.append(raw_outputs.detach())
-            all_emb_reps.append(emb_reps_after_attention.detach())
-            all_targets.append(targets.detach())
+                # Store predictions and labels
+                all_logits.append(raw_outputs.detach())
+                all_targets.append(targets.detach())
+                all_emb_reps.append(emb_reps_after_attention.detach())
+
+            all_attentions.append(sequence_attentions.float().detach())
             all_seq_counts.append(sequence_counts.detach())
             all_n_sequences.append(n_sequences.detach())
-            all_attentions.append(attention_outputs.detach())
             all_seq_targets.append(sequence_labels.detach())
-            all_seq_pools.append(sequence_pools.detach())
+            all_pools.append(sequence_pools.detach())
         # Compute scores
         all_logits = torch.cat(all_logits, dim=0)
         all_emb_reps = torch.cat(all_emb_reps, dim=0)
@@ -279,10 +257,10 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
         all_n_sequences = torch.cat(all_n_sequences, dim=0)
         all_attentions = torch.cat(all_attentions, dim=0)
         all_seq_targets = torch.cat(all_seq_targets, dim=0)
-        all_seq_pools = torch.cat(all_seq_pools, dim=0)
+        all_pools = torch.cat(all_pools, dim=0)
         # get_boundaries(all_emb_reps, all_targets)
 
-    return all_logits, all_targets, all_attentions, all_seq_targets, all_seq_pools, all_seq_counts, all_n_sequences, all_emb_reps
+    return all_logits, all_targets, all_emb_reps, all_attentions, all_seq_targets, all_pools, all_seq_counts, all_n_sequences
 
 
 def get_boundaries(all_embs, all_targets):
