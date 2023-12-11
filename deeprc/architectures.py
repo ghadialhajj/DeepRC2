@@ -363,7 +363,7 @@ class DeepRC(nn.Module):
                                                                         dtype=self.embedding_dtype).detach()
 
     def reduce_and_stack_minibatch(self, targets, sequences_of_indices, sequence_lengths, sequence_counts,
-                                   sequence_labels, sequence_pools):
+                                   sequence_labels, sequence_pools, attention_based: bool = True):
         """ Apply attention-based reduction of number of sequences per bag and stacked/concatenated bags to minibatch.
         
         Reduces sequences per bag `d_k` to top `d_k*sequence_reduction_fraction` important sequences,
@@ -423,7 +423,7 @@ class DeepRC(nn.Module):
             # Reduce number of sequences (apply __reduce_sequences_for_bag__ separately to all bags in mb)
             reduced_inputs, reduced_sequence_lengths, reduced_sequence_counts, reduced_sequence_labels, reduced_sequence_pools, reduced_sequence_attentions = \
                 list(zip(*[self.__reduce_sequences_for_bag__(inp, sequence_lengths, sequence_counts, sequence_labels,
-                                                             sequence_pools)
+                                                             sequence_pools, attention_based=attention_based)
                            for inp, sequence_lengths, sequence_counts, sequence_labels, sequence_pools
                            in zip(inputs_list, sequence_lengths, sequence_counts, sequence_labels, sequence_pools)]))
 
@@ -521,7 +521,7 @@ class DeepRC(nn.Module):
         # Calculate predictions (shape (N, n_outputs))
         predictions = self.output_nn(emb_reps_after_attention)
 
-        return predictions, mb_attention_weights, emb_reps_after_attention
+        return predictions, emb_reps_after_attention
 
     def get_temp(self, labels):
         assert not (self.temperature != 0 and self.per_for_tmp != 0), ("temperature and per_for_tmp cannot be set at "
@@ -578,7 +578,8 @@ class DeepRC(nn.Module):
         features_one_hot_padded = features_one_hot_padded / features_one_hot_padded.std()
         return features_one_hot_padded
 
-    def __reduce_sequences_for_bag__(self, inputs, sequence_lengths, sequence_counts, sequence_labels, sequence_pools):
+    def __reduce_sequences_for_bag__(self, inputs, sequence_lengths, sequence_counts, sequence_labels, sequence_pools,
+                                     attention_based):
         """ Reduces sequences to top `n_sequences*sequence_reduction_fraction` important sequences,
         sorted descending by importance based on attention weights.
         Reduction is performed using minibatches of `reduction_mb_size` sequences.
@@ -609,6 +610,7 @@ class DeepRC(nn.Module):
         if self.sequence_reduction_fraction <= 1.0:
             # Get number of sequences to reduce to
             n_reduced_sequences = int(sequence_lengths.shape[0] * self.sequence_reduction_fraction)
+
             # Get number of sequence-minibatches for reduction
             n_mbs = int(np.ceil(inputs.shape[0] / self.reduction_mb_size))
             mb_is = torch.arange(start=0, end=n_mbs, dtype=torch.int)
@@ -646,8 +648,13 @@ class DeepRC(nn.Module):
             # Concatenate attention weights for all sequences
             attention_acts = torch.cat(attention_acts, dim=0)
 
-            # Get indices of k sequences with highest attention weights
-            _, used_sequences = torch.topk(attention_acts, n_reduced_sequences, dim=0, largest=True, sorted=True)
+            if attention_based:
+                # Get indices of k sequences with highest attention weights
+                _, used_sequences = torch.topk(attention_acts, n_reduced_sequences, dim=0, largest=True, sorted=True)
+            else:
+                # Get indices of random k sequences withou replacement
+                used_sequences = torch.randperm(attention_acts.shape[0], device=self.device,
+                                                dtype=torch.long)[:n_reduced_sequences]
 
             if self.force_pos_in_attention and self.training_mode:
                 pos_seq_inds = torch.nonzero(sequence_labels)[:, 0]
