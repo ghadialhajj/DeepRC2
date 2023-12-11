@@ -676,9 +676,10 @@ class DeepRC(nn.Module):
             reduced_sequence_counts = \
                 sequence_counts[used_sequences.to(device=self.device)].detach().to(device=self.device,
                                                                                    dtype=self.embedding_dtype)
+            attenton_dtype = self.embedding_dtype if attention_based else torch.float32
             reduced_sequence_attentions = \
                 attention_acts[used_sequences.to(device=self.device)].detach().to(device=self.device,
-                                                                                  dtype=self.embedding_dtype)
+                                                                                  dtype=attenton_dtype)
         else:
             with torch.no_grad():
                 reduced_inputs = inputs.detach().to(device=self.device, dtype=self.embedding_dtype)

@@ -233,26 +233,27 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
 
             if rep_level_eval:
                 # Compute predictions from reduced sequences
-                raw_outputs, attention_outputs, emb_reps_after_attention = model(inputs_flat=inputs,
-                                                                                 sequence_lengths_flat=sequence_lengths,
-                                                                                 n_sequences_per_bag=n_sequences,
-                                                                                 sequence_counts=sequence_counts,
-                                                                                 sequence_labels=sequence_labels)
+                raw_outputs, _, emb_reps_after_attention = model(inputs_flat=inputs,
+                                                                 sequence_lengths_flat=sequence_lengths,
+                                                                 n_sequences_per_bag=n_sequences,
+                                                                 sequence_counts=sequence_counts,
+                                                                 sequence_labels=sequence_labels)
 
                 # Store predictions and labels
                 all_logits.append(raw_outputs.detach())
                 all_targets.append(targets.detach())
                 all_emb_reps.append(emb_reps_after_attention.detach())
 
-            all_attentions.append(attention_outputs.detach().detach())
+            all_attentions.append(sequence_attentions.detach())
             all_seq_counts.append(sequence_counts.detach())
             all_n_sequences.append(n_sequences.detach())
             all_seq_targets.append(sequence_labels.detach())
             all_pools.append(sequence_pools.detach())
         # Compute scores
-        all_logits = torch.cat(all_logits, dim=0)
-        all_emb_reps = torch.cat(all_emb_reps, dim=0)
-        all_targets = torch.cat(all_targets, dim=0)
+        if rep_level_eval:
+            all_logits = torch.cat(all_logits, dim=0)
+            all_emb_reps = torch.cat(all_emb_reps, dim=0)
+            all_targets = torch.cat(all_targets, dim=0)
         all_seq_counts = torch.cat(all_seq_counts, dim=0)
         all_n_sequences = torch.cat(all_n_sequences, dim=0)
         all_attentions = torch.cat(all_attentions, dim=0)
