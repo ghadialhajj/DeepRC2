@@ -241,6 +241,8 @@ if __name__ == '__main__':
                         wandb.log({f"test/label_positive/PRC_{classes_dict[id]}": wandb.Image(curve.figure_)})
                         wandb.run.summary.update({f"AP_{classes_dict[id]}": curve.average_precision,
                                                   f"ranAP_{classes_dict[id]}": curve.prevalence_pos_label})
+                    logger.log_stats(model, step=None, att_hists=True, device=device,
+                                     desired_dl_name="validationset_eval")
 
                     print(f"Test scores:\n{scores}")
                 wandb.finish()
