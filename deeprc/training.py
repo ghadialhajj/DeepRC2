@@ -26,7 +26,8 @@ class ESException(Exception):
 
 
 def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, task_definition: TaskDefinition,
-             show_progress: bool = True, device: torch.device = torch.device('cuda:1')) -> Tuple[dict, dict]:
+             logger: Logger, step: int, show_progress: bool = True, device: torch.device = torch.device('cuda:1'),
+             log_stats=True) -> Tuple[dict, dict]:
     """Compute DeepRC model scores on given dataset for tasks specified in `task_definition`
     
     Parameters
@@ -51,15 +52,27 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
         See `deeprc/examples/` for examples.
     """
     with torch.no_grad():
-        all_logits, all_targets, all_attentions, all_seq_targets, all_pools, all_seq_counts, all_n_sequences, *_ = get_outputs(
-            model, dataloader,
-            show_progress,
-            device)
+        all_logits, all_targets, all_emb_reps, *_ = get_outputs(
+            model=model, dataloader=dataloader, rep_level_eval=True,
+            show_progress=show_progress,
+            device=device)
+
         scores = task_definition.get_scores(raw_outputs=all_logits, targets=all_targets)
+
+        _, _, _, all_attentions, all_seq_targets, all_pools, all_seq_counts, all_n_sequences = get_outputs(
+            model=model, dataloader=dataloader, rep_level_eval=False,
+            show_progress=show_progress,
+            device=device)
+
         sequence_scores = task_definition.get_sequence_scores(raw_attentions=all_attentions.squeeze(),
                                                               sequence_pools=all_pools,
                                                               sequence_counts=all_seq_counts,
                                                               n_sequences=all_n_sequences)
+
+        if log_stats:
+            logger.log_stats(step, all_logits, all_targets, all_emb_reps, all_attentions, all_pools,
+                             att_hists=True, log_per_kernel=False, logit_hist=False,
+                             dl_name="validationset_eval")
 
         return scores, sequence_scores
 
@@ -346,7 +359,7 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
     scores, sequence_scores = evaluate(model=model,
                                        dataloader=trainingset_eval_dataloader,
                                        task_definition=task_definition,
-                                       device=device)
+                                       device=device, logger=None, step=None, log_stats=False)
     print(f" ...done!")
     tprint(f"[training_inference] u: {update:07d}; scores: {scores};")
     group = 'training_inference/'
@@ -364,7 +377,7 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
 
     print("  Calculating validation score...")
     scores, sequence_scores = evaluate(model=model, dataloader=validationset_eval_dataloader,
-                                       task_definition=task_definition, device=device)
+                                       task_definition=task_definition, device=device, logger=logger, step=update)
     scoring_loss = scores[early_stopping_target_id]['loss']
     early_stopping(scoring_loss, model)
 
@@ -382,13 +395,11 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
                        f"{group}{task_id}/AP_{classes_dict[id]}": curve.average_precision,
                        f"{group}{task_id}/ranAP_{classes_dict[id]}": curve.prevalence_pos_label}, step=update)
 
-    logger.log_stats(model, step=update, att_hists=True, device=device,
-                     desired_dl_name="validationset_eval")
-
     if track_test:
         print("  Calculating test score...")
         scores, sequence_scores = evaluate(model=model, dataloader=testset_eval_dataloader,
-                                           task_definition=task_definition, device=device)
+                                           task_definition=task_definition, device=device, logger=None, step=None,
+                                           log_stats=False)
         tprint(f"[test] u: {update:07d}; scores: {scores};")
         group = 'test/'
         for task_id, task_scores in scores.items():
