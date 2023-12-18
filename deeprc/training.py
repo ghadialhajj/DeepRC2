@@ -26,8 +26,9 @@ class ESException(Exception):
 
 
 def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, task_definition: TaskDefinition,
-             logger: Logger, step: int, show_progress: bool = True, device: torch.device = torch.device('cuda:1'),
-             log_stats=True) -> Tuple[dict, dict]:
+             logger: [Logger, None], step: [int, None], show_progress: bool = True,
+             device: torch.device = torch.device('cuda:1'), log_stats=True, dl_name="validationset_eval",
+             ) -> Tuple[dict, dict]:
     """Compute DeepRC model scores on given dataset for tasks specified in `task_definition`
     
     Parameters
@@ -69,10 +70,10 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
                                                               sequence_counts=all_seq_counts,
                                                               n_sequences=all_n_sequences)
 
-        if log_stats:
+        if log_stats and dl_name in ["validationset_eval", "testset_eval"]:
             logger.log_stats(step, all_logits, all_targets, all_emb_reps, all_attentions, all_pools,
                              att_hists=True, log_per_kernel=False, logit_hist=False,
-                             dl_name="validationset_eval")
+                             dl_name=dl_name)
 
         return scores, sequence_scores
 
@@ -142,9 +143,6 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
     # initialize the early_stopping object
     early_stopping = EarlyStopping(patience=1000, verbose=True)
-
-    # if log:
-    #     logger.log_stats(model=model, device=device, step=0, log_and_att_hists=True)
 
     os.makedirs(results_directory, exist_ok=True)
 
@@ -330,11 +328,6 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
             saver_loader.save_to_file(filename=f'best_u{state["update"]}.tar.gzip')
             model.training_mode = False
             print('Finished Training!')
-            # if log:
-            #     logger.log_stats(model=model, device=device, step=n_updates, log_and_att_hists=True,
-            #                      log_per_kernel=False)
-            # logger.log_motifs(list(model.sequence_embedding.parameters())[0].cpu().detach().numpy(),
-            #                   step=update)
 
     except Exception as e:
         with open(logfile, 'a') as lf:
@@ -372,7 +365,8 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
 
     print("  Calculating validation score...")
     scores, sequence_scores = evaluate(model=model, dataloader=validationset_eval_dataloader,
-                                       task_definition=task_definition, device=device, logger=logger, step=update)
+                                       task_definition=task_definition, device=device, logger=logger, step=update,
+                                       log_stats=True)
     scoring_loss = scores[early_stopping_target_id]['loss']
     early_stopping(scoring_loss, model)
 
