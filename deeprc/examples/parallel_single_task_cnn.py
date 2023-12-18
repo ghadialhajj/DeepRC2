@@ -27,16 +27,16 @@ from deeprc.training import ESException
 #
 parser = argparse.ArgumentParser()
 parser.add_argument('--n_updates', help='Number of updates to train for. Recommended: int(1e5). Default: int(1e3)',
-                    type=int, default=int(20e3))
+                    type=int, default=int(1))
 # type=int, default=int(100))
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(2e2))
+                    type=int, default=int(5))
 # type=int, default=int(10))
 parser.add_argument('--log_training_stats_at', help='Log training stats every `log_training_stats_at` updates. '
                                                     'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(1e2))
+                    type=int, default=int(5))
 parser.add_argument('--sample_n_sequences', help='Number of instances to reduce repertoires to during training via'
                                                  'random dropout. This should be less than the number of instances per '
                                                  'repertoire. Only applied during training, not for evaluation. '
@@ -88,7 +88,7 @@ if __name__ == '__main__':
         # strategy = "TASTE"
         # strategy = "TASTER"
         # strategy = "AP"
-        # strategy = "F*G*E"
+        # strategy = "FAE"
         # strategy = "FE"
         strategy = "PDRC"
         # strategy = "SInS"
@@ -131,43 +131,31 @@ if __name__ == '__main__':
             dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval}
             if with_test:
                 dl_dict.update({"testset_eval": testset_eval})
-            logger = Logger(dataloaders=dl_dict, with_FPs=False)
+            logger = Logger(dataloaders=dl_dict, with_FPs=False, strategy=strategy)
 
             if strategy == "TE":
-                config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                               "plain_DeepRC": False, "rep_loss_only": False, "mul_att_by_factor": False,
-                               "shift_by_factor": None, "use_softmax": True, "factor_as_attention": None,
-                               "average_pooling": False})
-            elif strategy == "FG":
-                config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": True,
-                               "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": False,
-                               "use_softmax": True, "factor_as_attention": None,
-                               "average_pooling": False})
+                config.update(
+                    {"plain_DeepRC": False, "mul_att_by_factor": False, "shift_by_factor": None, "use_softmax": True,
+                     "factor_as_attention": None, "average_pooling": False})
             elif strategy == "PDRC":
-                config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                               "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": False,
-                               "shift_by_factor": None, "use_softmax": True, "factor_as_attention": None,
-                               "average_pooling": False})
+                config.update(
+                    {"plain_DeepRC": True, "mul_att_by_factor": False, "shift_by_factor": None, "use_softmax": True,
+                     "factor_as_attention": None, "average_pooling": False})
             elif strategy == "FE":
-                config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                               "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": None,
-                               "use_softmax": True, "shift_by_factor": None, "factor_as_attention": 100,
-                               "average_pooling": False})
+                config.update(
+                    {"plain_DeepRC": True, "mul_att_by_factor": False, "use_softmax": True, "shift_by_factor": None,
+                     "factor_as_attention": 100, "average_pooling": False})
             elif strategy == "AP":
-                config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                               "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": None,
-                               "use_softmax": True, "shift_by_factor": None, "factor_as_attention": None,
-                               "average_pooling": True})
-            elif strategy == "F*G*E":
-                config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                               "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": 100,
-                               "shift_by_factor": None, "use_softmax": True, "factor_as_attention": None,
-                               "average_pooling": False})
+                config.update(
+                    {"plain_DeepRC": True, "mul_att_by_factor": False, "use_softmax": True, "shift_by_factor": None,
+                     "factor_as_attention": None, "average_pooling": True})
+            elif strategy == "FAE":
+                config.update(
+                    {"plain_DeepRC": True, "mul_att_by_factor": 100, "shift_by_factor": None, "use_softmax": True,
+                     "factor_as_attention": None, "average_pooling": False})
             elif strategy == "SInS":  # shift inside softmax
-                config.update({"train_then_freeze": False, "staged_training": False, "forced_attention": False,
-                               "plain_DeepRC": True, "rep_loss_only": False, "mul_att_by_factor": None,
-                               "shift_by_factor": 10, "factor_as_attention": None,
-                               "average_pooling": False})
+                config.update({"plain_DeepRC": True, "mul_att_by_factor": False, "shift_by_factor": 10,
+                               "factor_as_attention": None, "average_pooling": False})
             else:
                 raise "Invalid strategy"
             try:
@@ -204,7 +192,7 @@ if __name__ == '__main__':
                                add_positional_information=config["add_positional_information"], training_mode=True,
                                sequence_reduction_fraction=config["sequence_reduction_fraction"],
                                reduction_mb_size=config["reduction_mb_size"], device=device,
-                               forced_attention=config["forced_attention"], force_pos_in_attention=fpa,
+                               forced_attention=False, force_pos_in_attention=fpa,
                                temperature=config["attention_temperature"], use_softmax=config["use_softmax"],
                                mul_att_by_factor=config["mul_att_by_factor"], average_pooling=config["average_pooling"],
                                factor_as_attention=config["factor_as_attention"],
@@ -218,9 +206,9 @@ if __name__ == '__main__':
                                 logger=logger, n_updates=args.n_updates, evaluate_at=args.evaluate_at, device=device,
                                 results_directory=f"{root_dir}{results_dir}", prop=config["prop"],
                                 log_training_stats_at=args.log_training_stats_at, testset_eval_dataloader=testset_eval,
-                                train_then_freeze=config["train_then_freeze"],
-                                staged_training=config["staged_training"],
-                                plain_DeepRC=config["plain_DeepRC"], log=True, rep_loss_only=config["rep_loss_only"],
+                                train_then_freeze=False,
+                                staged_training=False,
+                                plain_DeepRC=config["plain_DeepRC"], log=True,
                                 config=config, loss_config=loss_config, track_test=False)
 
                 # logger.log_stats(model=model, device=device, step=args.n_updates)
@@ -232,8 +220,9 @@ if __name__ == '__main__':
                     classes_dict = task_definition.__sequence_targets__[0].classes_dict
                     assert not model.training_mode, "Model is in training mode!"
                     scores, sequence_scores = evaluate(model=model, dataloader=testset_eval,
-                                                       task_definition=task_definition,
-                                                       device=device)
+                                                       task_definition=task_definition, step=args.n_updates,
+                                                       device=device, logger=logger, log_stats=True,
+                                                       dl_name="testset_eval")
                     curves = sequence_scores['sequence_class'].pop('curves')
                     wandb.run.summary.update(scores["label_positive"])
                     wandb.run.summary.update(sequence_scores["sequence_class"])
@@ -241,8 +230,6 @@ if __name__ == '__main__':
                         wandb.log({f"test/label_positive/PRC_{classes_dict[id]}": wandb.Image(curve.figure_)})
                         wandb.run.summary.update({f"AP_{classes_dict[id]}": curve.average_precision,
                                                   f"ranAP_{classes_dict[id]}": curve.prevalence_pos_label})
-                    logger.log_stats(model, step=None, att_hists=True, device=device,
-                                     desired_dl_name="validationset_eval")
 
                     print(f"Test scores:\n{scores}")
                 wandb.finish()
