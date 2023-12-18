@@ -75,9 +75,10 @@ def url_get(url: str, dst: str, verbose: bool = True):
 
 
 class Logger():
-    def __init__(self, dataloaders, with_FPs=False):
+    def __init__(self, dataloaders, with_FPs=False, strategy=""):
         self.with_FPs = with_FPs
         self.dataloaders = dataloaders
+        self.strategy = strategy
 
     def log_motifs(self, params: np.ndarray, step):
         cnn_weights = params[:, :20, :].squeeze()
@@ -90,7 +91,7 @@ class Logger():
 
     def log_stats(self, step: int, all_logits, all_targets, all_emb_reps, all_attentions, all_pools,
                   att_hists: bool = False, log_per_kernel: bool = False, logit_hist: bool = False,
-                  dl_name: str = "trainingset_eval"):
+                  dl_name: str = "validationset_eval"):
         """
         Logs model statistics including repertoire embeddings, logits, and attentions for each dataloader.
         """
@@ -103,7 +104,7 @@ class Logger():
         # split_rep_embs_tsne = perform_tsne(split_rep_embs)
         self.log_repertoire_rep(dl_name, split_rep_embs_pca, None, step)
         if att_hists:
-            self.log_attention(dl_name, split_attentions, step)
+            self.log_attention(dl_name, split_attentions, step, save_data=dl_name == "testset_eval")
         if logit_hist:
             self.log_logits(dl_name, split_logits, step)
         if log_per_kernel and dl_name == "validationset_eval":
@@ -115,10 +116,10 @@ class Logger():
         # self.plot_scatter(pos_vals=split_rep_embs_tsne[0], neg_vals=split_rep_embs_tsne[1], dl_name=dl_name,
         #                   plot_title=f"Positive (B) and Negative (R) TSNEcomp", step=step, method="TSNE")
 
-    def log_attention(self, dl_name, split_attentions, step):
+    def log_attention(self, dl_name, split_attentions, step, save_data: bool):
         self.plot_histogram(split_attentions, dl_name=dl_name,
                             plot_title=f"Raw Attention", xaxis_title="Attention value",
-                            step=step)
+                            step=step, save_data=save_data)
 
     def log_logits(self, dl_name, split_logits, step):
         self.plot_histogram(data={"positive": split_logits[0], "negative": split_logits[1]}, dl_name=dl_name,
@@ -131,21 +132,37 @@ class Logger():
         split_rep_embs = self.split_outputs(all_emb_reps, all_targets, flatten=False)
         return split_logits, split_attentions, split_rep_embs
 
-    @staticmethod
-    def plot_histogram(data: dict, n_bins: int = 50, dl_name: str = "", plot_title: str = "",
-                       xaxis_title: str = "Attention value", step: int = 0):
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
-        config = dict(opacity=0.6, histnorm="percent", nbinsx=n_bins)
+    def plot_histogram(self, data: dict, n_bins: int = 50, dl_name: str = "", plot_title: str = "",
+                       xaxis_title: str = "Attention value", step: int = 0, save_data: bool = False):
+        fig = make_subplots()
 
-        for name, values in data.items():
-            secondary_y = True if name in ["TN", "FP"] else False
-            fig.add_trace(go.Histogram(x=values, **config, name=name), secondary_y=secondary_y)
-        # Set y-axes titles
-        fig.update_yaxes(title_text="Postives (TP+FN)", secondary_y=False)
-        fig.update_yaxes(title_text="Negatives (TN+FP)", secondary_y=True)
+        min = np.min([np.min(class_data) for class_data in data.values()])
+        max = np.max([np.max(class_data) for class_data in data.values()])
+        bins = np.linspace(min, max, n_bins)
 
-        fig.update_layout(title=plot_title, xaxis_title=xaxis_title, yaxis_title="Percentage", barmode='overlay')
-        fig.update_traces(autobinx=False, selector=dict(type='histogram'))
+        pdfs = {class_name: np.histogram(class_data, bins=bins, density=True)[0] for
+                class_name, class_data in data.items()}
+
+        pmfs = {class_name: pdfs[class_name] / np.sum(pdfs[class_name]) * 100 for class_name in pdfs}
+
+        for name, hist in pmfs.items():
+            fig.add_trace(go.Scatter(x=bins, y=hist, mode='lines', name=name))
+
+        fig.update_layout(
+            title='Histogram of Classes',
+            xaxis=dict(title=xaxis_title),
+            yaxis=dict(title="Percentage"),
+            showlegend=True
+        )
+
+        if save_data:
+            # create folders if they don't exist first and save the figure
+            root_dir = "/storage/ghadia/DeepRC2/deeprc/results/Attentions"
+            os.makedirs(f"{root_dir}/PNG/{self.strategy}", exist_ok=True)
+            os.makedirs(f"{root_dir}/JSON/{self.strategy}", exist_ok=True)
+
+            fig.write_image(f"{root_dir}/PNG/{self.strategy}/{wandb.run.name}.png")
+            fig.write_json(f"{root_dir}/JSON/{self.strategy}/{wandb.run.name}.json")
 
         # Log the plot
         wandb.log({f"{xaxis_title}/{dl_name}": fig}, step=step)
@@ -183,11 +200,11 @@ class Logger():
         all_values = all_values.detach().cpu()
         all_targets = all_targets.flatten().detach().cpu()
         if sequence_level:
-            TP = all_values[np.where(all_targets == 3)[0]].detach().cpu().numpy().flatten().tolist()
-            TN = all_values[np.where(all_targets == 0)[0]].detach().cpu().numpy().flatten().tolist()
-            FN = all_values[np.where(all_targets == 2)[0]].detach().cpu().numpy().flatten().tolist()
-            FP = all_values[np.where(all_targets == 1)[0]].detach().cpu().numpy().flatten().tolist()
-            return {"TP": TP, "TN": TN, "FN": FN, "FP": FP}
+            HW = all_values[np.where(all_targets == 3)[0]].detach().cpu().numpy().flatten()  # .tolist()
+            LW̅ = all_values[np.where(all_targets == 0)[0]].detach().cpu().numpy().flatten()  # .tolist()
+            LW = all_values[np.where(all_targets == 2)[0]].detach().cpu().numpy().flatten()  # .tolist()
+            HW̅ = all_values[np.where(all_targets == 1)[0]].detach().cpu().numpy().flatten()  # .tolist()
+            return {"HW": HW, "LW̅": LW̅, "LW": LW, "HW̅": HW̅}
 
         else:
             pos_vals = all_values[np.where(all_targets)[0]].detach().cpu().numpy()
