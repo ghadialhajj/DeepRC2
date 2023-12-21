@@ -77,7 +77,7 @@ class SequenceEmbeddingCNN(nn.Module):
 
         self.network = torch.nn.Sequential(*network)
 
-    def forward(self, inputs, sequence_counts, *args, **kwargs):
+    def forward(self, inputs, *args, **kwargs):
         """Apply sequence embedding CNN to inputs in NLC format.
         
         Parameters
@@ -94,11 +94,6 @@ class SequenceEmbeddingCNN(nn.Module):
         # Apply CNN
         conv_acts = self.network(inputs)
         # Take maximum over sequence positions (-> 1 output per kernel per sequence)
-        with torch.no_grad():
-            if sequence_counts is not None:
-                first_half = conv_acts[:, :-5, :].clone()  # Use clone() to avoid inplace operation
-                scaled_first_half = first_half * sequence_counts.view(-1, 1, 1)
-                conv_acts[:, :-5, :] = scaled_first_half
         max_conv_acts, _ = conv_acts.max(dim=-1)
         return max_conv_acts
 
@@ -268,14 +263,13 @@ class DeepRC(nn.Module):
                  output_network: torch.nn.Module = OutputNetwork(
                      n_input_features=32, n_output_features=1, n_layers=0, n_units=32),
                  sequence_embedding_as_16_bit: bool = True,
-                 consider_seq_counts: bool = True, consider_seq_counts_after_cnn=False,
-                 add_positional_information: bool = True, consider_seq_counts_after_att=False,
-                 consider_seq_counts_after_softmax=False, consider_seq_counts_before_maxpool=False,
+                 consider_seq_counts: bool = True,
+                 add_positional_information: bool = True,
                  sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
-                 device: torch.device = torch.device('cuda:0'), forced_attention: bool = True,
-                 force_pos_in_attention=True, training_mode: bool = True, temperature: float = 0.01,
-                 mul_att_by_factor: int = 1, per_for_tmp: float = 0.75, shift_by_factor=0,
-                 use_softmax=True, factor_as_attention=0, average_pooling=False):
+                 device: torch.device = torch.device('cuda:0'),
+                 force_pos_in_attention=True, training_mode: bool = True,
+                 mul_att_by_factor: int = 1,
+                 factor_as_attention=0, average_pooling=False):
         """DeepRC network as described in paper
         
         Apply `.reduce_and_stack_minibatch()` to reduce number of sequences by `sequence_reduction_fraction`
@@ -315,31 +309,19 @@ class DeepRC(nn.Module):
              the attention weights.
         device : torch.device
             Device to perform computations on
-        forced_attention : bool
-            If True, the model will use att_weights=1 for positive sequences and att_weights=0 for negative sequences.
-            Otherwise, attention weights will be computed using the attention network.
         """
         super(DeepRC, self).__init__()
         self.n_input_features = n_input_features
         self.max_seq_len = max_seq_len
         self.device = device
         self.consider_seq_counts = consider_seq_counts
-        self.consider_seq_counts_after_cnn = consider_seq_counts_after_cnn
-        self.consider_seq_counts_after_att = consider_seq_counts_after_att
-        self.consider_seq_counts_after_softmax = consider_seq_counts_after_softmax
-        self.consider_seq_counts_before_maxpool = consider_seq_counts_before_maxpool
         self.add_positional_information = add_positional_information
         self.sequence_reduction_fraction = sequence_reduction_fraction
         self.reduction_mb_size = int(reduction_mb_size)
-        self.forced_attention = forced_attention
         self.force_pos_in_attention = force_pos_in_attention
         self.training_mode = training_mode
-        self.temperature = temperature
-        self.per_for_tmp = per_for_tmp
         self.mul_att_by_factor = mul_att_by_factor
         self.average_pooling = average_pooling
-        self.shift_by_factor = shift_by_factor
-        self.use_softmax = use_softmax
         self.factor_as_attention = factor_as_attention
 
         # sequence embedding network (h())
@@ -442,7 +424,7 @@ class DeepRC(nn.Module):
             mb_reduced_sequence_labels, mb_reduced_sequence_pools, mb_n_sequences, mb_reduced_sequence_attentions
 
     def forward(self, inputs_flat, sequence_lengths_flat, n_sequences_per_bag,
-                sequence_counts, sequence_labels):
+                sequence_labels):
         """ Apply DeepRC (see Fig.2 in paper)
         
         Parameters
@@ -464,21 +446,12 @@ class DeepRC(nn.Module):
         predictions: torch.Tensor
             Prediction for bags of shape (tr_samples, n_outputs)
         """
-        # if not is_training:
-        #     weights = torch.softmax(sequence_attentions / self.temperature, 0)
-        #     inputs_flat = inputs_flat * weights[:, None, None]
-        #
         # Get sequence embedding h() for all bags in mb (shape: (d_k, d_v))
-        counts = sequence_counts if self.consider_seq_counts_before_maxpool else None
-        mb_emb_seqs = self.sequence_embedding(inputs_flat, sequence_counts=counts,
+        mb_emb_seqs = self.sequence_embedding(inputs_flat,
                                               sequence_lengths=sequence_lengths_flat).to(dtype=torch.float32)
 
-        if self.consider_seq_counts_after_cnn:
-            mb_emb_seqs = mb_emb_seqs * sequence_counts.unsqueeze(1)
         # Calculate attention weights f() before softmax function for all bags in mb (shape: (d_k, 1))
-        if self.forced_attention:
-            mb_attention_weights = sequence_labels[:, None]
-        elif self.average_pooling or self.factor_as_attention:
+        if self.average_pooling or self.factor_as_attention:
             mb_attention_weights = torch.zeros_like(sequence_labels[:, None])
         else:
             mb_attention_weights = self.attention_nn(mb_emb_seqs)
@@ -491,24 +464,14 @@ class DeepRC(nn.Module):
             attention_weights = mb_attention_weights[start_i:start_i + n_seqs]
             # Get attention weights for single bag (shape: (n_sequences_per_bag, 1))
             emb_seqs = mb_emb_seqs[start_i:start_i + n_seqs]
-            if self.consider_seq_counts_after_att:
-                emb_seqs = emb_seqs * sequence_counts[start_i:start_i + n_seqs].reshape(-1, 1)
             # Calculate attention activations (softmax over n_sequences_per_bag) (shape: (n_sequences_per_bag, 1))
-            if self.per_for_tmp != 0:  # not self.training_mode and
-                attention_weights = attention_weights / self.get_temp(sequence_labels)  # self.temperature
-            if self.shift_by_factor:
-                attention_weights = (attention_weights + sequence_labels[start_i:start_i + n_seqs].reshape(-1, 1)
-                                     * self.shift_by_factor)
-            if self.use_softmax:
-                attention_weights = torch.softmax(attention_weights, dim=0)
+            attention_weights = torch.softmax(attention_weights, dim=0)
             if self.mul_att_by_factor:
                 attention_weights = attention_weights * (sequence_labels[start_i:start_i + n_seqs] * (
                         self.mul_att_by_factor - 1) + 1).unsqueeze(1)
             if self.factor_as_attention:
                 attention_weights = (sequence_labels[start_i:start_i + n_seqs] * (
                         self.factor_as_attention - 1) + 1).unsqueeze(1)
-            if self.consider_seq_counts_after_softmax:
-                attention_weights = attention_weights * sequence_counts[start_i:start_i + n_seqs].reshape(-1, 1)
             # Apply attention weights to sequence features (shape: (n_sequences_per_bag, d_v))
             emb_reps_after_attention = emb_seqs * attention_weights
             # Compute weighted sum over sequence features after attention (format: (d_v,))
@@ -523,23 +486,6 @@ class DeepRC(nn.Module):
 
         return predictions, mb_attention_weights, emb_reps_after_attention
 
-    def get_temp(self, labels):
-        assert not (self.temperature != 0 and self.per_for_tmp != 0), ("temperature and per_for_tmp cannot be set at "
-                                                                       "the same time")
-        if self.temperature == 0 and self.per_for_tmp == 0:
-            return 1
-        if self.temperature != 0:
-            temp = self.temperature
-        elif self.per_for_tmp != 0:
-            num_pos = torch.sum(labels)
-            if num_pos == 0:
-                return 1
-            else:
-                temp = 1 / torch.log(self.per_for_tmp * (len(labels) - num_pos) / num_pos / (1 - self.per_for_tmp))
-                if temp == 0:
-                    temp = 1
-        return temp
-
     def __compute_features__(self, sequence_char_indices, sequence_lengths, max_mb_seq_len, counts_per_sequence):
         """Compute one-hot sequence features + position features with shape (n_sequences, sequence_length, n_features)
         from sequence indices
@@ -549,7 +495,6 @@ class DeepRC(nn.Module):
         sequence_char_indices = sequence_char_indices.to(dtype=torch.long, device=self.device)
         sequence_lengths = sequence_lengths.to(dtype=torch.long, device=self.device)
         # Only send sequence counts to device, if using sequence counts
-        # counts_copy = np.copy(counts_per_sequence.detach().cpu().numpy())
         if self.consider_seq_counts:
             counts_per_sequence = counts_per_sequence.to(dtype=self.embedding_dtype, device=self.device)
         # Allocate tensor for one-hot sequence features + position features
@@ -567,8 +512,6 @@ class DeepRC(nn.Module):
         features_one_hot_padded[:, :sequence_char_indices.shape[1], :] = features_one_hot
         # Scale by sequence counts
         if self.consider_seq_counts:
-            # scale the first 15 dimensions of the third dimension of features_one_hot_padded by counts_per_sequence
-            # features_one_hot_padded[:, :, :15] = features_one_hot_padded[:, :, :15] * counts_per_sequence[:, None, None]
             features_one_hot_padded = features_one_hot_padded * counts_per_sequence[:, None, None]
         # Add position information
         if self.add_positional_information:
@@ -622,28 +565,17 @@ class DeepRC(nn.Module):
                 inputs_mb = inputs[mb_i * self.reduction_mb_size:(mb_i + 1) * self.reduction_mb_size].to(
                     device=self.device,
                     dtype=self.embedding_dtype)
-                sequence_labels_mb = sequence_labels[
-                                     mb_i * self.reduction_mb_size:(mb_i + 1) * self.reduction_mb_size].to(
-                    device=self.device, dtype=torch.long)
 
                 sequence_lengths_mb = sequence_lengths[
                                       mb_i * self.reduction_mb_size:(mb_i + 1) * self.reduction_mb_size].to(
                     device=self.device, dtype=torch.long)
 
-                sequence_counts_mb = sequence_lengths[
-                                     mb_i * self.reduction_mb_size:(mb_i + 1) * self.reduction_mb_size].to(
-                    device=self.device, dtype=torch.long)
-
-                counts = sequence_counts_mb if self.consider_seq_counts_before_maxpool else None
                 # Get sequence embedding (h())
-                emb_seqs = self.sequence_embedding(inputs_mb, sequence_counts=counts,
+                emb_seqs = self.sequence_embedding(inputs_mb,
                                                    sequence_lengths=sequence_lengths_mb).to(dtype=torch.float32)
 
                 # Calculate attention weights before softmax (f())
-                if self.forced_attention or self.factor_as_attention:
-                    attention_acts.append(sequence_labels_mb)
-                else:
-                    attention_acts.append(self.attention_nn(emb_seqs).squeeze(dim=-1))
+                attention_acts.append(self.attention_nn(emb_seqs).squeeze(dim=-1))
 
             # Concatenate attention weights for all sequences
             attention_acts = torch.cat(attention_acts, dim=0)
