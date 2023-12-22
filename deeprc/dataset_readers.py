@@ -82,18 +82,17 @@ def no_sequence_count_scaling(seq_counts: np.ndarray, seq_labels: np.ndarray, mi
     return scaled_counts
 
 
-def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repertoiresdata_path: str,
+def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, hdf5_file,
+                     n_repertoires,
                      split_inds: list = None, n_splits: int = 5, cross_validation_fold: int = 0, rnd_seed: int = 0,
                      n_worker_processes: int = 4, batch_size: int = 4,
                      inputformat: str = 'NCL', keep_dataset_in_ram: bool = True,
                      sample_n_sequences: int = 10000,
                      metadata_file_id_column: str = 'ID', metadata_file_column_sep: str = '\t',
-                     sequence_column: str = 'amino_acid', sequence_counts_column: str = 'templates',
-                     sequence_labels_columns: list = None, used_sequence_labels_column: str = 'is_signal',
-                     repertoire_files_column_sep: str = '\t', filename_extension: str = '.tsv', h5py_dict: dict = None,
+                     used_sequence_labels_column: str = 'is_signal',
                      all_sets: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
-                     with_test: bool = False, verbose: bool = True, force_pos_in_subsampling=False, min_count: int = 1,
-                     non_zeros_only: bool = False, n_training_samples: int = 360) \
+                     verbose: bool = True, force_pos_in_subsampling=False, min_count: int = 1,
+                     n_training_samples: int = 360) \
         -> Tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
     """Get data loaders for a dataset
     
@@ -180,6 +179,91 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
     testset_eval_dataloader: DataLoader
         Dataloader for testset with deactivated `sample_n_sequences`
     """
+
+    #
+    # Create dataset
+    #
+    if verbose:
+        print(f"Creating dataloader from repertoire files in {hdf5_file}")
+    full_dataset = RepertoireDataset(metadata_filepath=metadata_file, hdf5_filepath=hdf5_file, inputformat=inputformat,
+                                     sample_id_column=metadata_file_id_column,
+                                     metadata_file_column_sep=metadata_file_column_sep, task_definition=task_definition,
+                                     keep_in_ram=keep_dataset_in_ram,
+                                     used_sequence_labels_column=used_sequence_labels_column,
+                                     sequence_counts_scaling_fn=sequence_counts_scaling_fn,
+                                     force_pos_in_subsampling=force_pos_in_subsampling, min_count=min_count)
+    n_samples = len(full_dataset)
+    if verbose:
+        print(f"\tFound and loaded a total of {n_samples} samples")
+
+    #
+    # Create dataset split indices
+    #
+    if split_inds is None:
+        if verbose:
+            print("Computing random split indices")
+        n_repertoires_per_split = int(n_repertoires / n_splits)
+        rnd_gen = np.random.RandomState(rnd_seed)
+        shuffled_repertoire_inds = rnd_gen.permutation(n_repertoires)
+        split_inds = [shuffled_repertoire_inds[s_i * n_repertoires_per_split:(s_i + 1) * n_repertoires_per_split]
+                      if s_i != n_splits - 1 else
+                      shuffled_repertoire_inds[s_i * n_repertoires_per_split:]  # Remaining repertoires to last split
+                      for s_i in range(n_splits)]
+    else:
+        split_inds = [np.array(split_ind, dtype=int) for split_ind in split_inds]
+
+    if cross_validation_fold >= len(split_inds):
+        raise ValueError(f"Demanded `cross_validation_fold` {cross_validation_fold} but only {len(split_inds)} splits "
+                         f"exist in `split_inds`.")
+
+    testset_inds = split_inds.pop(cross_validation_fold)
+    validationset_inds = split_inds.pop(cross_validation_fold - 1)[:int(n_training_samples / 3)]
+    trainingset_inds = np.concatenate(split_inds)[:n_training_samples]
+
+    if verbose:
+        print("Creating dataloaders for dataset splits")
+
+    trainingset_dataloader, trainingset_eval_dataloader, validationset_eval_dataloader, testset_eval_dataloader = (
+            [None] * 4)
+    #
+    # Create datasets and dataloaders for splits
+    #
+    if verbose:
+        print("Creating dataloaders for dataset splits")
+
+    if not all_sets:
+        trainingset_inds = [0, 1]
+
+    training_dataset = RepertoireDatasetSubset(
+        dataset=full_dataset, indices=trainingset_inds, sample_n_sequences=sample_n_sequences)
+    trainingset_dataloader = DataLoader(
+        training_dataset, batch_size=batch_size, shuffle=True, num_workers=n_worker_processes,
+        collate_fn=no_stack_collate_fn)
+    if all_sets:
+        training_eval_dataset = RepertoireDatasetSubset(
+            dataset=full_dataset, indices=trainingset_inds, sample_n_sequences=None)
+        trainingset_eval_dataloader = DataLoader(
+            training_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
+
+        validationset_eval_dataset = RepertoireDatasetSubset(
+            dataset=full_dataset, indices=validationset_inds, sample_n_sequences=None)
+        validationset_eval_dataloader = DataLoader(
+            validationset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
+        testset_eval_dataset = RepertoireDatasetSubset(
+            dataset=full_dataset, indices=testset_inds, sample_n_sequences=None)
+        testset_eval_dataloader = DataLoader(
+            testset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
+
+    if verbose:
+        print("\tDone!")
+
+    return trainingset_dataloader, trainingset_eval_dataloader, validationset_eval_dataloader, testset_eval_dataloader
+
+
+def create_hdf5_file(repertoiresdata_path: str, filename_extension: str = '.tsv', h5py_dict: dict = None,
+                     n_worker_processes: int = 4, repertoire_files_column_sep: str = '\t',
+                     sequence_column: str = 'amino_acid', sequence_counts_column: [str, None] = 'templates',
+                     sequence_labels_columns: list = None, verbose: bool = True):
     #
     # Convert dataset to hdf5 container if no hdf5 container was specifies
     #
@@ -212,87 +296,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
             n_repertoires = hf['metadata']['n_samples'][()]
         if verbose:
             print(f"\tSuccessfully created {hdf5_file}!")
-
-    #
-    # Create dataset
-    #
-    if verbose:
-        print(f"Creating dataloader from repertoire files in {hdf5_file}")
-    full_dataset = RepertoireDataset(metadata_filepath=metadata_file, hdf5_filepath=hdf5_file, inputformat=inputformat,
-                                     sample_id_column=metadata_file_id_column,
-                                     metadata_file_column_sep=metadata_file_column_sep, task_definition=task_definition,
-                                     keep_in_ram=keep_dataset_in_ram,
-                                     used_sequence_labels_column=used_sequence_labels_column,
-                                     sequence_counts_scaling_fn=sequence_counts_scaling_fn,
-                                     force_pos_in_subsampling=force_pos_in_subsampling, min_count=min_count,
-                                     non_zeros_only=non_zeros_only)
-    n_samples = len(full_dataset)
-    if verbose:
-        print(f"\tFound and loaded a total of {n_samples} samples")
-
-    #
-    # Create dataset split indices
-    #
-    if split_inds is None:
-        if verbose:
-            print("Computing random split indices")
-        n_repertoires_per_split = int(n_repertoires / n_splits)
-        rnd_gen = np.random.RandomState(rnd_seed)
-        shuffled_repertoire_inds = rnd_gen.permutation(n_repertoires)
-        split_inds = [shuffled_repertoire_inds[s_i * n_repertoires_per_split:(s_i + 1) * n_repertoires_per_split]
-                      if s_i != n_splits - 1 else
-                      shuffled_repertoire_inds[s_i * n_repertoires_per_split:]  # Remaining repertoires to last split
-                      for s_i in range(n_splits)]
-    else:
-        split_inds = [np.array(split_ind, dtype=int) for split_ind in split_inds]
-
-    if cross_validation_fold >= len(split_inds):
-        raise ValueError(f"Demanded `cross_validation_fold` {cross_validation_fold} but only {len(split_inds)} splits "
-                         f"exist in `split_inds`.")
-    if with_test:
-        testset_inds = split_inds.pop(cross_validation_fold)
-    validationset_inds = split_inds.pop(cross_validation_fold - 1)[:int(n_training_samples / 3)]
-    trainingset_inds = np.concatenate(split_inds)[:n_training_samples]
-
-    if verbose:
-        print("Creating dataloaders for dataset splits")
-
-    trainingset_dataloader, trainingset_eval_dataloader, validationset_eval_dataloader, testset_eval_dataloader = [
-                                                                                                                      None] * 4
-    #
-    # Create datasets and dataloaders for splits
-    #
-    if verbose:
-        print("Creating dataloaders for dataset splits")
-
-    if not all_sets:
-        trainingset_inds = [0, 1]
-
-    training_dataset = RepertoireDatasetSubset(
-        dataset=full_dataset, indices=trainingset_inds, sample_n_sequences=sample_n_sequences)
-    trainingset_dataloader = DataLoader(
-        training_dataset, batch_size=batch_size, shuffle=True, num_workers=n_worker_processes,
-        collate_fn=no_stack_collate_fn)
-    if all_sets:
-        training_eval_dataset = RepertoireDatasetSubset(
-            dataset=full_dataset, indices=trainingset_inds, sample_n_sequences=None)
-        trainingset_eval_dataloader = DataLoader(
-            training_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
-
-        validationset_eval_dataset = RepertoireDatasetSubset(
-            dataset=full_dataset, indices=validationset_inds, sample_n_sequences=None)
-        validationset_eval_dataloader = DataLoader(
-            validationset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
-        if with_test:
-            testset_eval_dataset = RepertoireDatasetSubset(
-                dataset=full_dataset, indices=testset_inds, sample_n_sequences=None)
-            testset_eval_dataloader = DataLoader(
-                testset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
-
-    if verbose:
-        print("\tDone!")
-
-    return trainingset_dataloader, trainingset_eval_dataloader, validationset_eval_dataloader, testset_eval_dataloader
+    return hdf5_file, n_repertoires
 
 
 def no_stack_collate_fn(batch_as_list: list):
@@ -321,7 +325,7 @@ class RepertoireDataset(Dataset):
                  task_definition: TaskDefinition = None, used_sequence_labels_column: str = 'is_signal',
                  keep_in_ram: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
                  sample_n_sequences: int = None, verbose: bool = True, force_pos_in_subsampling=True,
-                 min_count: int = 1, non_zeros_only: bool = False):
+                 min_count: int = 1):
         """PyTorch Dataset class for reading repertoire dataset from metadata file and hdf5 file
         
         See `deeprc.dataset_readers.make_dataloaders` for simple loading of datasets via PyTorch data loader.
@@ -365,7 +369,6 @@ class RepertoireDataset(Dataset):
         self.sequence_counts_scaling_fn = sequence_counts_scaling_fn
         self.metadata_file_column_sep = metadata_file_column_sep
         self.sample_n_sequences = sample_n_sequences
-        self.non_zeros_only = non_zeros_only
         self.sequence_counts_hdf5_key = 'sequence_counts'
         self.sequence_labels_hdf5_key = used_sequence_labels_column
         self.sequence_pools_hdf5_key = f"{used_sequence_labels_column}_pool"
@@ -477,22 +480,9 @@ class RepertoireDataset(Dataset):
                 sampledata = hf['sampledata']
         if sample_n_sequences:
             rnd_gen = np.random.RandomState()  # TODO: Add shared memory integer random seed for dropout
-            if self.non_zeros_only:
-                seq_labels = sampledata[self.sequence_labels_hdf5_key][
-                    range(sample_sequences_start_end[0], sample_sequences_start_end[1])]
-                raw_counts = sampledata[self.sequence_counts_hdf5_key][
-                    range(sample_sequences_start_end[0], sample_sequences_start_end[1])]
-                counts_per_sequence = \
-                    self.sequence_counts_scaling_fn(
-                        seq_counts=raw_counts, seq_labels=seq_labels, min_count=self.min_count,
-                        is_training=sample_n_sequences is not None)
-                non_zero = np.nonzero(counts_per_sequence)[0] + sample_sequences_start_end[0]
-                sample_sequence_inds = np.unique(rnd_gen.randint(low=0, high=len(non_zero), size=sample_n_sequences))
-                sample_sequence_inds = non_zero[sample_sequence_inds]
-            else:
-                sample_sequence_inds = np.unique(rnd_gen.randint(
-                    low=sample_sequences_start_end[0], high=sample_sequences_start_end[1],
-                    size=sample_n_sequences))
+            sample_sequence_inds = np.unique(rnd_gen.randint(
+                low=sample_sequences_start_end[0], high=sample_sequences_start_end[1],
+                size=sample_n_sequences))
 
             old_size = len(sample_sequence_inds)
             if self.force_pos_in_subsampling:
