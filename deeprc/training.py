@@ -16,66 +16,13 @@ from widis_lstm_tools.utils.collection import TeePrint, SaverLoader, close_all
 from deeprc.task_definitions import TaskDefinition
 import wandb
 from typing import Tuple
-from deeprc.utils import get_outputs, Logger
+from deeprc.utils import Logger, evaluate
 
 
 class ESException(Exception):
     def __init__(self, ):
         super().__init__()
         self.additional_info = "Early Stop Exception"
-
-
-def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, task_definition: TaskDefinition,
-             logger: [Logger, None], step: [int, None], show_progress: bool = True,
-             device: torch.device = torch.device('cuda:1'), log_stats=True, dl_name="validationset_eval",
-             ) -> Tuple[dict, dict]:
-    """Compute DeepRC model scores on given dataset for tasks specified in `task_definition`
-    
-    Parameters
-    ----------
-    model: torch.nn.Module
-         deeprc.architectures.DeepRC or similar model as PyTorch module
-    dataloader: torch.utils.data.DataLoader
-         Data loader for dataset to calculate scores on
-    task_definition: TaskDefinition
-        TaskDefinition object containing the tasks to train the DeepRC model on. See `deeprc/examples/` for examples.
-    show_progress: bool
-         Show progressbar?
-    device: torch.device
-         Device to use for computations. E.g. `torch.device('cuda:0')` or `torch.device('cpu')`.
-    
-    Returns
-    ---------
-    scores: dict
-        Nested dictionary of format `{task_id: {score_id: score_value}}`, e.g.
-        `{"binary_task_1": {"auc": 0.6, "bacc": 0.5, "f1": 0.2, "loss": 0.01}}`. The scores returned are computed using
-        the .get_scores() methods of the individual target instances (e.g. `deeprc.task_definitions.BinaryTarget()`).
-        See `deeprc/examples/` for examples.
-    """
-    with torch.no_grad():
-        all_logits, all_targets, all_emb_reps, *_ = get_outputs(
-            model=model, dataloader=dataloader, rep_level_eval=True,
-            show_progress=show_progress,
-            device=device)
-
-        scores = task_definition.get_scores(raw_outputs=all_logits, targets=all_targets)
-
-        _, _, _, all_attentions, all_seq_targets, all_pools, all_seq_counts, all_n_sequences = get_outputs(
-            model=model, dataloader=dataloader, rep_level_eval=False,
-            show_progress=show_progress,
-            device=device)
-
-        sequence_scores = task_definition.get_sequence_scores(raw_attentions=all_attentions.squeeze(),
-                                                              sequence_pools=all_pools,
-                                                              sequence_counts=all_seq_counts,
-                                                              n_sequences=all_n_sequences)
-
-        if log_stats and dl_name in ["validationset_eval", "testset_eval"]:
-            logger.log_stats(step, all_logits, all_targets, all_emb_reps, all_attentions, all_pools,
-                             att_hists=True, log_per_kernel=False, logit_hist=False,
-                             dl_name=dl_name)
-
-        return scores, sequence_scores
 
 
 def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stopping_target_id: str,
@@ -86,9 +33,9 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
           load_file: str = None, device: torch.device = torch.device('cuda:1'),
           num_torch_threads: int = 4, learning_rate: float = 1e-4, l1_weight_decay: float = 0,
           l2_weight_decay: float = 0, log_training_stats_at: int = int(1e2), evaluate_at: int = int(5e3),
-          ignore_missing_target_values: bool = True, prop: float = 0.7, train_then_freeze: bool = True,
-          staged_training: bool = True, plain_DeepRC: bool = False, log: bool = True, rep_loss_only=False,
-          config: dict = {}, loss_config: dict = {}, track_test: bool = False):
+          ignore_missing_target_values: bool = True,
+          with_seq_loss: bool = False, log: bool = True,
+          track_test: bool = False):
     """Train a DeepRC model on a given dataset on tasks specified in `task_definition`
      
      Model with lowest validation set loss on target `early_stopping_target_id` will be taken as final model (=early
@@ -154,9 +101,6 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
     # Print all outputs to logfile and terminal
     tee_print = TeePrint(logfile)
     tprint = tee_print.tee_print
-    # pring the config file entries inside the log file
-    [tprint(f"{val[0]}: {val[1]}") for val in config.items()]
-    [tprint(f"{val[0]}: {val[1]}") for val in loss_config.items()]
 
     try:
         # Set up PyTorch and numpy random seeds
@@ -188,7 +132,6 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
         # Save checkpoint dictionary to RAM object
         saver_loader.save_to_ram(savename=str(update))
-        max_auc = 0
         #
         # Start training
         #
@@ -204,11 +147,6 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                 for data in trainingset_dataloader:
                     if update == 500:
                         evaluate_at = 500
-                    if update == int(prop * n_updates) and staged_training:
-                        second_phase = True
-                        if train_then_freeze:
-                            for param in chain(model.attention_nn.parameters(), model.sequence_embedding.parameters()):
-                                param.requires_grad = False
 
                     # Get samples as lists
                     targets, inputs, sequence_lengths, counts_per_sequence, labels_per_sequence, pools_per_sequence, sample_ids = data
@@ -224,31 +162,23 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     logit_outputs, attention_outputs, _ = model(inputs_flat=inputs,
                                                                 sequence_lengths_flat=sequence_lengths,
                                                                 n_sequences_per_bag=n_sequences,
-                                                                sequence_counts=sequence_counts,
                                                                 sequence_labels=sequence_labels)
 
                     # Calculate losses
                     pred_loss = task_definition.get_loss(raw_outputs=logit_outputs, targets=targets,
                                                          ignore_missing_target_values=ignore_missing_target_values)
                     l1reg_loss = (torch.mean(torch.stack([p.abs().float().mean() for p in model.parameters()])))
-                    if plain_DeepRC:
+                    if with_seq_loss:
+                        attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(), sequence_labels)
+                    else:
                         with torch.no_grad():
                             attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(),
-                                                                               sequence_labels, sequence_counts,
-                                                                               n_sequences,
-                                                                               model.temperature)
+                                                                               sequence_labels)
+
+                    if with_seq_loss:
+                        loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
                     else:
-                        attention_loss = task_definition.get_sequence_loss(attention_outputs.squeeze(), sequence_labels,
-                                                                           sequence_counts, n_sequences,
-                                                                           model.temperature)
-                    if plain_DeepRC:
                         loss = pred_loss + l1reg_loss * l1_weight_decay
-                    else:
-                        if staged_training:
-                            loss = pred_loss * second_phase + l1reg_loss * l1_weight_decay + attention_loss * (
-                                not (rep_loss_only and second_phase))
-                        else:
-                            loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
 
                     with torch.no_grad():
                         total_loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
@@ -299,10 +229,6 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                                                           testset_eval_dataloader, track_test=track_test)
 
                         # If we have a new best loss on the validation set, we save the model as new best model
-                        if scores[early_stopping_target_id]['roc_auc'] > max_auc:
-                            max_auc = scores[early_stopping_target_id]['roc_auc']
-
-                        # If we have a new best loss on the validation set, we save the model as new best model
                         if best_validation_loss > scoring_loss:
                             best_validation_loss = scoring_loss
                             tprint(f"New best validation loss for {early_stopping_target_id}: {scoring_loss}")
@@ -335,7 +261,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
         raise e
     finally:
         close_all()  # Clean up
-    return max_auc
+    return best_validation_loss
 
 
 def log_scores(device, early_stopping, early_stopping_target_id, logger, model, task_definition, tprint,
