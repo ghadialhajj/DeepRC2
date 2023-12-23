@@ -6,6 +6,7 @@ Author -- Michael Widrich
 Contact -- widrich@ml.jku.at
 """
 import os
+from typing import Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,9 +21,9 @@ from tqdm import tqdm
 import wandb
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
+from deeprc.task_definitions import TaskDefinition
 from time import time
 import logomaker
-import dill as pkl
 
 
 class Timer(object):
@@ -75,8 +76,7 @@ def url_get(url: str, dst: str, verbose: bool = True):
 
 
 class Logger():
-    def __init__(self, dataloaders, with_FPs=False, strategy=""):
-        self.with_FPs = with_FPs
+    def __init__(self, dataloaders, strategy=""):
         self.dataloaders = dataloaders
         self.strategy = strategy
 
@@ -91,7 +91,7 @@ class Logger():
 
     def log_stats(self, step: int, all_logits, all_targets, all_emb_reps, all_attentions, all_pools,
                   att_hists: bool = False, log_per_kernel: bool = False, logit_hist: bool = False,
-                  dl_name: str = "validationset_eval"):
+                  dl_name: str = "val_eval_dl"):
         """
         Logs model statistics including repertoire embeddings, logits, and attentions for each dataloader.
         """
@@ -101,20 +101,17 @@ class Logger():
         split_logits, split_attentions, split_rep_embs = self.get_values_per_dl(all_logits, all_targets, all_emb_reps,
                                                                                 all_attentions, all_pools)
         split_rep_embs_pca = perform_pca(split_rep_embs)
-        # split_rep_embs_tsne = perform_tsne(split_rep_embs)
-        self.log_repertoire_rep(dl_name, split_rep_embs_pca, None, step)
+        self.log_repertoire_rep(dl_name, split_rep_embs_pca, step)
         if att_hists:
-            self.log_attention(dl_name, split_attentions, step, save_data=dl_name == "testset_eval")
+            self.log_attention(dl_name, split_attentions, step, save_data=dl_name == "test_eval_dl")
         if logit_hist:
             self.log_logits(dl_name, split_logits, step)
-        if log_per_kernel and dl_name == "validationset_eval":
+        if log_per_kernel and dl_name == "val_eval_dl":
             self.log_per_kernel(split_rep_embs)
 
-    def log_repertoire_rep(self, dl_name, split_rep_embs_pca, split_rep_embs_tsne, step):
+    def log_repertoire_rep(self, dl_name, split_rep_embs_pca, step):
         self.plot_scatter(pos_vals=split_rep_embs_pca[0], neg_vals=split_rep_embs_pca[1], dl_name=dl_name,
                           plot_title=f"Positive (B) and Negative (R) PCAcomp", step=step, method="PCA")
-        # self.plot_scatter(pos_vals=split_rep_embs_tsne[0], neg_vals=split_rep_embs_tsne[1], dl_name=dl_name,
-        #                   plot_title=f"Positive (B) and Negative (R) TSNEcomp", step=step, method="TSNE")
 
     def log_attention(self, dl_name, split_attentions, step, save_data: bool):
         self.plot_histogram(split_attentions, dl_name=dl_name,
@@ -136,8 +133,8 @@ class Logger():
                        xaxis_title: str = "Attention value", step: int = 0, save_data: bool = False):
         fig = make_subplots()
 
-        min = np.min([np.min(class_data) for class_data in data.values()])
-        max = np.max([np.max(class_data) for class_data in data.values()])
+        min = np.min([np.min(class_data) for class_data in data.values() if class_data.size > 0])
+        max = np.max([np.max(class_data) for class_data in data.values() if class_data.size > 0])
         bins = np.linspace(min, max, n_bins)
 
         pdfs = {class_name: np.histogram(class_data, bins=bins, density=True)[0] for
@@ -253,7 +250,6 @@ def get_outputs(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader,
                 raw_outputs, _, emb_reps_after_attention = model(inputs_flat=inputs,
                                                                  sequence_lengths_flat=sequence_lengths,
                                                                  n_sequences_per_bag=n_sequences,
-                                                                 sequence_counts=sequence_counts,
                                                                  sequence_labels=sequence_labels)
 
                 # Store predictions and labels
@@ -328,15 +324,6 @@ def perform_pca(split_rep_embs):
     return pos_embs, neg_embds
 
 
-def perform_tsne(split_rep_embs):
-    pos_len = split_rep_embs[0].shape[0]
-    tsne = TSNE(random_state=42, n_components=2, verbose=0, perplexity=40, n_iter=400)
-    results = tsne.fit_transform(np.concatenate([split_rep_embs[0], split_rep_embs[1]]))
-    pos_embs = results[:pos_len, :]
-    neg_embds = results[pos_len:, :]
-    return pos_embs, neg_embds
-
-
 def plot_motifs(motif_matrix, num_aas: int = 3, kernel_size: int = 5):
     indices = np.argsort(-motif_matrix, axis=1)[:, :num_aas]
 
@@ -367,146 +354,74 @@ def plot_motifs(motif_matrix, num_aas: int = 3, kernel_size: int = 5):
     return crp_logo.fig
 
 
-def get_split_inds(n_folds, cohort, n_tr, n_v, n_te, seed):
-    assert n_tr + n_v + n_te <= 120, "Too many samples requested"
-    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_separate_test_correct.pkl"
-    with open(split_file, 'rb') as sfh:
-        split_inds = pkl.load(sfh)["inds"]
-    if cohort == 2:
-        split_inds = split_inds[-1]
-    elif cohort == 1:
-        split_inds = split_inds[:-1]
-        split_inds = [a for b in split_inds for a in b]
-    else:
-        split_inds = [a for b in split_inds for a in b]
-    np.random.seed(seed)
-    np.random.shuffle(split_inds)
-    # split_inds = [split_inds[i * int(len(split_inds) / n_folds): (i + 1) * int(len(split_inds) / n_folds)] for i in
-    #               range(n_folds)]
-    train_split_inds = split_inds[:n_tr]
-    val_split_inds = split_inds[n_tr: n_tr + n_v]
-    test_split_inds = split_inds[n_tr + n_v: n_tr + n_v + n_te]
-    return [test_split_inds, train_split_inds, val_split_inds]
+def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, task_definition: TaskDefinition,
+             logger: [Logger, None], step: [int, None], show_progress: bool = True,
+             device: torch.device = torch.device('cuda:1'), log_stats=True, dl_name="validationset_eval",
+             ) -> Tuple[dict, dict]:
+    """Compute DeepRC model scores on given dataset for tasks specified in `task_definition`
+
+    Parameters
+    ----------
+    model: torch.nn.Module
+         deeprc.architectures.DeepRC or similar model as PyTorch module
+    dataloader: torch.utils.data.DataLoader
+         Data loader for dataset to calculate scores on
+    task_definition: TaskDefinition
+        TaskDefinition object containing the tasks to train the DeepRC model on. See `deeprc/examples/` for examples.
+    show_progress: bool
+         Show progressbar?
+    device: torch.device
+         Device to use for computations. E.g. `torch.device('cuda:0')` or `torch.device('cpu')`.
+
+    Returns
+    ---------
+    scores: dict
+        Nested dictionary of format `{task_id: {score_id: score_value}}`, e.g.
+        `{"binary_task_1": {"auc": 0.6, "bacc": 0.5, "f1": 0.2, "loss": 0.01}}`. The scores returned are computed using
+        the .get_scores() methods of the individual target instances (e.g. `deeprc.task_definitions.BinaryTarget()`).
+        See `deeprc/examples/` for examples.
+    """
+    with torch.no_grad():
+        all_logits, all_targets, all_emb_reps, *_ = get_outputs(
+            model=model, dataloader=dataloader, rep_level_eval=True,
+            show_progress=show_progress,
+            device=device)
+
+        scores = task_definition.get_scores(raw_outputs=all_logits, targets=all_targets)
+
+        _, _, _, all_attentions, all_seq_targets, all_pools, all_seq_counts, all_n_sequences = get_outputs(
+            model=model, dataloader=dataloader, rep_level_eval=False,
+            show_progress=show_progress,
+            device=device)
+
+        sequence_scores = task_definition.get_sequence_scores(raw_attentions=all_attentions.squeeze(),
+                                                              sequence_pools=all_pools,
+                                                              sequence_counts=all_seq_counts,
+                                                              n_sequences=all_n_sequences)
+
+        if log_stats and dl_name in ["validationset_eval", "testset_eval"]:
+            logger.log_stats(step, all_logits, all_targets, all_emb_reps, all_attentions, all_pools,
+                             att_hists=True, log_per_kernel=False, logit_hist=False,
+                             dl_name=dl_name)
+
+        return scores, sequence_scores
 
 
-def get_splits_new_emerson(n_folds, cohort, n_tr, n_v, n_te, seed):
-    assert n_tr + n_v + n_te <= 120, "Too many samples requested"
-    if cohort == 2:
-        split_inds = np.arange(120)
-    np.random.seed(seed)
-    np.random.shuffle(split_inds)
-    # split_inds = [split_inds[i * int(len(split_inds) / n_folds): (i + 1) * int(len(split_inds) / n_folds)] for i in
-    #               range(n_folds)]
-    train_split_inds = split_inds[:n_tr]
-    val_split_inds = split_inds[n_tr: n_tr + n_v]
-    test_split_inds = split_inds[n_tr + n_v: n_tr + n_v + n_te]
-    return [test_split_inds, train_split_inds, val_split_inds]
-
-
-def get_correct_indices(seed):
-    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_separate_test_correct.pkl"
-    with open(split_file, 'rb') as sfh:
-        split_inds = pkl.load(sfh)["inds"]
-    test_split_inds = list(split_inds[-1])
-    split_inds = split_inds[:-1]
-    split_inds = [a for b in split_inds for a in b]
-
-    np.random.seed(seed)
-    np.random.shuffle(split_inds)
-    folds = 4
-    split_inds = [split_inds[i * int(len(split_inds) / folds): (i + 1) * int(len(split_inds) / folds)] for i in
-                  range(folds)]
-    train_split_inds = split_inds[:3]
-    val_split_inds = split_inds[3]
-    return [test_split_inds, *train_split_inds, val_split_inds]
-
-
-def get_cherry_picked_inds(cohort: int = 1, n_t: int = 30, n_v: int = 160, best_pos: bool = True,
-                           best_neg: bool = True):
-    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_separate_test_correct.pkl"
-    with open(split_file, 'rb') as sfh:
-        split_inds = pkl.load(sfh)["inds"]
-        train_split_inds = []
-        if cohort == 2:
-            split_inds = split_inds[-1]
-            # Perfect indices: High for pos, low for neg
-            # train_split_inds = [731, 704, 753, 762, 730, 715, 686, 691, 758, 703, 710, 669, 709, 712, 713, 718, 723,
-            #                     728, 683, 687]
-            # High for pos and neg
-            # train_split_inds = [731, 704, 753, 762, 730, 715, 686, 691, 758, 703, 772, 692, 700, 705, 706, 734, 666,
-            #                     696, 750, 754]
-            # Low for pos and High for neg
-            # train_split_inds = [697, 680, 720, 708, 732, 768, 773, 745, 748, 749, 772, 692, 700, 705, 706, 734, 666,
-            #                     696, 750, 754]
-            # Low for pos and for neg
-            # train_split_inds = [697, 680, 720, 708, 732, 768, 773, 745, 748, 749, 710, 669, 709, 712, 713, 718, 723,
-            #                     728, 683, 687]
-            positive = [779, 756, 746, 744, 774, 721, 737, 724, 719, 765, 729, 783, 781, 773, 740, 696, 754, 671, 697,
-                        768, 760, 668, 741, 755, 687, 682, 673, 718, 717, 782, 763, 677, 690, 753, 748, 708, 716, 732,
-                        704, 726, 699, 714, 707, 723, 679, 772, 665, 731, 739, 694, 752]
-
-            negative = [734, 747, 778, 759, 749, 693, 758, 745, 775, 735, 761, 685, 769, 725, 757, 751, 713, 736, 715,
-                        733, 777, 720, 722, 701, 750, 728, 730, 712, 669, 706, 705, 703, 695, 764, 738, 689, 684, 770,
-                        743, 678, 672, 666, 784, 762, 766, 767, 771, 776, 780, 688, 667, 670, 674, 675, 676, 680, 681,
-                        683, 686, 742, 691, 692, 698, 700, 702, 709, 710, 711, 727]
-
-        elif cohort == 1:
-            split_inds = split_inds[:-1]
-            split_inds = [a for b in split_inds for a in b]
-            positive = [307, 161, 473, 208, 236, 343, 508, 386, 28, 551, 231, 215, 233, 213, 542, 63, 528, 283, 235,
-                        415, 290, 462, 380, 648, 295, 568, 658, 664, 437, 83, 164, 168, 596, 26, 399, 35, 111, 650, 418,
-                        94, 326, 287, 306, 285, 172, 641, 554, 11, 34, 105, 15, 87, 126, 237, 574, 495, 144, 260, 385,
-                        67, 409, 222, 467, 365, 254, 275, 362, 345, 459, 268, 55, 299, 464, 518, 604, 185, 108, 615, 54,
-                        25, 639, 524, 463, 396, 192, 81, 112, 361, 581, 656, 57, 494, 229, 557, 273, 546, 389, 412, 378,
-                        419, 424, 586, 321, 649, 127, 265, 88, 196, 489, 247, 174, 477, 152, 342, 301, 86, 141, 68, 188,
-                        328, 398, 182, 522, 202, 391, 388, 527, 445, 417, 513, 349, 82, 2, 427, 241, 240, 334, 250, 189,
-                        223, 123, 16, 532, 548, 550, 622, 274, 590, 592, 539, 53, 602, 319, 194, 316, 584, 486, 576,
-                        538, 535, 92, 322, 133, 654, 110, 523, 259, 176, 272, 52, 30, 140, 382, 659, 565, 148, 93, 158,
-                        500, 488, 482, 428, 267, 509, 99, 340, 177, 187, 280, 264, 210, 198, 333, 411, 6, 404, 376, 125,
-                        446, 351, 405, 390, 327, 184, 318, 291, 485, 438, 453, 569, 497, 616, 470, 332, 600, 620, 452,
-                        635, 599, 136, 163, 493, 206, 491, 638, 634, 400, 121, 323, 618, 570, 149, 142, 607, 201, 628,
-                        309, 567, 41, 512, 245, 506, 487, 360, 119, 324, 128, 170, 359, 337, 19, 367, 255, 277, 279,
-                        162, 315, 450, 263, 344, 253]
-            negative = [230, 167, 529, 101, 221, 348, 471, 269, 393, 49, 329, 138, 43, 218, 186, 431, 284, 249, 154,
-                        104, 226, 37, 31, 66, 39, 595, 292, 354, 79, 439, 100, 276, 481, 124, 645, 89, 132, 545, 180,
-                        45, 78, 14, 643, 147, 651, 243, 251, 534, 338, 454, 289, 238, 220, 183, 61, 559, 636, 346, 114,
-                        96, 363, 353, 314, 246, 358, 414, 242, 179, 191, 613, 190, 59, 606, 173, 134, 571, 256, 209,
-                        225, 262, 563, 395, 469, 547, 435, 429, 294, 451, 553, 536, 603, 579, 281, 311, 543, 560, 293,
-                        562, 258, 228, 217, 203, 504, 505, 530, 106, 401, 368, 605, 117, 625, 97, 8, 341, 633, 614, 644,
-                        377, 27, 193, 20, 22, 42, 65, 36, 159, 153, 271, 150, 200, 216, 310, 352, 76, 21, 588, 227, 219,
-                        171, 165, 122, 120, 71, 270, 46, 303, 38, 373, 653, 631, 413, 379, 577, 433, 461, 566, 514, 525,
-                        540, 519, 516, 502, 483, 544, 422, 143, 476, 197, 442, 432, 199, 248, 297, 317, 330, 331, 312,
-                        339, 239, 169, 369, 298, 139, 137, 420, 449, 80, 484, 32, 13, 10, 531, 3, 549, 647, 597, 558,
-                        47, 661, 623, 90, 91, 181, 73, 64, 578, 40, 29, 113, 58, 151, 499, 537, 160, 72, 145, 443, 448,
-                        77, 205, 479, 583, 69, 23, 541, 617, 166, 335, 175, 421, 455, 116, 475, 12, 498, 336, 304, 430,
-                        109, 533, 266, 261, 356, 257, 252, 102, 95, 610, 425, 407, 406, 392, 384, 372, 496, 350, 521,
-                        300, 572, 288, 601, 608, 440, 612, 232, 619, 0, 207, 5, 9, 24, 178, 50, 51, 129, 98, 564, 573,
-                        646, 1, 85, 74, 44, 56, 103, 107, 18, 115, 118, 135, 157, 552, 282, 561, 296, 302, 305, 347,
-                        355, 370, 492, 371, 460, 403, 447]
-
-    n_per_class = int(n_t / 2)
-    if best_pos:
-        train_split_inds.extend(positive[:n_per_class])
-    else:
-        train_split_inds.extend(positive[-n_per_class:])
-    if best_neg:
-        train_split_inds.extend(negative[-n_per_class:])
-    else:
-        train_split_inds.extend(negative[:n_per_class])
-    np.random.seed(0)
-    np.random.shuffle(train_split_inds)
-    val_split_inds = [x for x in split_inds if x not in train_split_inds]
-    np.random.shuffle(val_split_inds)
-    val_split_inds = val_split_inds[:n_v]
-    return [[], train_split_inds, val_split_inds]
-
-
-def get_original_inds():
-    # Get file for dataset splits
-    split_file = "/storage/ghadia/DeepRC2/deeprc/datasets/splits_used_in_paper/CMV_splits.pkl"
-    with open(split_file, 'rb') as sfh:
-        split_inds = pkl.load(sfh)
-    return split_inds
+def eval_on_test(task_definition, best_model, test_eval_dl, logger, device, n_updates):
+    classes_dict = task_definition.__sequence_targets__[0].classes_dict
+    assert not best_model.training_mode, "Model is in training mode!"
+    scores, sequence_scores = evaluate(model=best_model, dataloader=test_eval_dl,
+                                       task_definition=task_definition, step=n_updates,
+                                       device=device, logger=logger, log_stats=True,
+                                       dl_name="testset_eval")
+    curves = sequence_scores['sequence_class'].pop('curves')
+    wandb.run.summary.update(scores["label_positive"])
+    wandb.run.summary.update(sequence_scores["sequence_class"])
+    # remove random AP scores and curves
+    for id, curve in curves.items():
+        wandb.log({f"test/label_positive/PRC_{classes_dict[id]}": wandb.Image(curve.figure_)})
+        wandb.run.summary.update({f"AP_{classes_dict[id]}": curve.average_precision,
+                                  f"ranAP_{classes_dict[id]}": curve.prevalence_pos_label})
 
 
 if __name__ == '__main__':
