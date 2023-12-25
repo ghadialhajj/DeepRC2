@@ -7,7 +7,8 @@ import re
 from multiprocessing import Pool
 
 # Define the mapping between numbers and strings
-mapping = {0: "TN", 1: "FP", 2: "FN", 3: "TP"}
+# mapping = {0: "TN", 1: "FP", 2: "FN", 3: "TP"}
+mapping = {0: "LW̅", 1: "HW̅", 2: "LW", 3: "HW"}
 transposed_mapping = {v: k for k, v in mapping.items()}
 
 
@@ -85,8 +86,7 @@ class AnnotateReps:
     def annotate(self, tsv_file):
         class_label = self.metadata.loc[self.metadata["filename"] == tsv_file, "label_positive"].tolist()[0]
         df = pd.read_csv(f"{self.data_directory}/{tsv_file}", sep='\t')
-        columns_to_keep = ["cdr3_aa", "v_call", "j_call", "is_signal"]
-        df = df[columns_to_keep]
+        df = df[self.columns_to_keep]
         if not class_label:
             assert not np.count_nonzero(df['is_signal'] == 1)
         for tpr in self.TPR:
@@ -139,36 +139,36 @@ class AnnotateReps:
             # Use starmap to pass multiple arguments to the wrapper function
             pool.map(self.annotate_rep, files)
 
-    def test_metrics_per_label_per_rep(self, TP, FP, FN, TN):
-        wr = (TP + FN) / (TP + FP + FN + TN)
-        fdr = FP / (FP + TP)
-        fpr1 = FP / (FP + TN)
-        tpr = TP / (TP + FN)
+    def test_metrics_per_label_per_rep(self, HW, HW̅, LW, LW̅):
+        wr = (HW + LW) / (HW + HW̅ + LW + LW̅)
+        fdr = HW̅ / (HW̅ + HW)
+        fpr1 = HW̅ / (HW̅ + LW̅)
+        tpr = HW / (HW + LW)
         fpr2 = self.compute_FPR([tpr], [fdr], wr)
         assert np.abs(fpr1 - fpr2[0]) < 1e-5
 
-    def calculate_wr_tpr_fdr(self, TP, FP, FN, TN):
-        wr = (TP + FN) / (TP + FP + FN + TN)
+    def calculate_wr_tpr_fdr(self, HW, HW̅, LW, LW̅):
+        wr = (HW + LW) / (HW + HW̅ + LW + LW̅)
         try:
-            fdr = FP / (FP + TP)
+            fdr = HW̅ / (HW̅ + HW)
         except ZeroDivisionError:
             fdr = 0
         try:
-            fpr = FP / (FP + TN)
+            fpr = HW̅ / (HW̅ + LW̅)
         except ZeroDivisionError:
             fpr = 0
         try:
-            tpr = TP / (TP + FN)
+            tpr = HW / (HW + LW)
         except ZeroDivisionError:
             tpr = 0
         return tpr, fdr, fpr, wr
 
     def get_metrics_per_label_per_rep(self, df, label):
-        TP = np.count_nonzero(df[label + '_pool'] == transposed_mapping["TP"])
-        FP = np.count_nonzero(df[label + '_pool'] == transposed_mapping["FP"])
-        FN = np.count_nonzero(df[label + '_pool'] == transposed_mapping["FN"])
-        TN = np.count_nonzero(df[label + '_pool'] == transposed_mapping["TN"])
-        return TP, FP, FN, TN
+        HW = np.count_nonzero(df[label + '_pool'] == transposed_mapping["HW"])
+        HW̅ = np.count_nonzero(df[label + '_pool'] == transposed_mapping["HW̅"])
+        LW = np.count_nonzero(df[label + '_pool'] == transposed_mapping["LW"])
+        LW̅ = np.count_nonzero(df[label + '_pool'] == transposed_mapping["LW̅"])
+        return HW, HW̅, LW, LW̅
 
     def test_metrics_across_labels(self):
         # compile results in dict of labels of dicts of metrics
@@ -184,10 +184,10 @@ class AnnotateReps:
                     tpr = tpr / 100
                     for fdr in self.FDR:
                         label = 'is_signal_TPR_' + str(int(tpr * 100)) + '%_FDR_' + str(fdr) + '%'
-                        TP, FP, FN, TN = self.get_metrics_per_label_per_rep(df, label)
+                        HW, HW̅, LW, LW̅ = self.get_metrics_per_label_per_rep(df, label)
                         if label not in results:
                             results[label] = {"TPR": [], "FDR": [], "FPR": [], "WR": []}
-                        tpr_e, fdr_e, fpr_e, wr_e = self.calculate_wr_tpr_fdr(TP, FP, FN, TN)
+                        tpr_e, fdr_e, fpr_e, wr_e = self.calculate_wr_tpr_fdr(HW, HW̅, LW, LW̅)
                         if class_label and wr_e == 0:
                             counter += 1
                         if not class_label and wr_e != 0:
@@ -197,9 +197,8 @@ class AnnotateReps:
                         if class_label:
                             results[label]["TPR"].append(tpr_e)
                             results[label]["FDR"].append(fdr_e)
-                        results[label]["FPR"].append(fpr_e)
-                        if class_label:
                             results[label]["WR"].append(wr_e)
+                        results[label]["FPR"].append(fpr_e)
                         # self.test_metrics_per_label_per_rep(TP, FP, FN, TN)
         print(f"Empty positive files @ {self.wr}: {counter}")
         pattern = r"TPR_(\d+)%_FDR_(\d+)%"
@@ -207,8 +206,6 @@ class AnnotateReps:
         for label in results:
             print(label)
             match = re.search(pattern, label)
-            tpr = match.group(1)
-            fdr = match.group(2)
             for metric in results[label]:
                 results[label][metric] = np.mean(results[label][metric]), np.std(results[label][metric])
                 if metric == "FPR":
@@ -236,7 +233,7 @@ if __name__ == '__main__':
     np.random.seed(0)
     for n_signal in [5, 13, 25, 50, 250, 500]:
         # for n_signal in [500]:
-        annotater = AnnotateReps(f"/storage/ghadia/DeepRC2/deeprc/datasets/HIV/v6/phenotype_burden_{n_signal}/data",
+        annotater = AnnotateReps(f"/storage/ghadia/DeepRC2/deeprc/datasets/HIV/final/phenotype_burden_{n_signal}/data",
                                  n_signal=n_signal, n_threads=30)
         # annotater.annotate_reps_all_files()
         annotater.annotate_reps_all_files_parallel()
