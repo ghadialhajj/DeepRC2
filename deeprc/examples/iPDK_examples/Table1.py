@@ -20,6 +20,8 @@ parser.add_argument('--strategy', help='Name of the strategy. Default: int(1e3)'
                     type=str, default='FAE')
 parser.add_argument('--n_witnesses', help='Name of the strategy. Default: int(1e3)',
                     type=int, default=500)
+parser.add_argument('--n_updates', help='Name of the strategy. Default: int(1e3)',
+                    type=int, default=int(2e4))
 parser.add_argument('--device', help='GPU ID. Default: 0',
                     type=int, default=0)
 args = parser.parse_args()
@@ -37,7 +39,7 @@ hyperparams_values = {'mul_att_by_factor': [20, 100, 500], 'factor_as_attention'
 
 config = {"sequence_reduction_fraction": 0.1,
           "reduction_mb_size": int(5e3),
-          'strategy': 'FAE',
+          'strategy': args.strategy,
           'used_sequence_labels_column': 'is_signal_TPR_20%_FDR_50%',
           'evaluate_at': int(2e2),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'),
@@ -46,7 +48,7 @@ config = {"sequence_reduction_fraction": 0.1,
           'kernel_size': 9,
           'n_kernels': 32,
           'log_training_stats_at': int(2e2),
-          'n_updates': int(2e4),
+          'n_updates': args.n_updates,
           'sample_n_sequences': int(1e4),
           'learning_rate': 1e-4,
           "with_seq_loss": False,
