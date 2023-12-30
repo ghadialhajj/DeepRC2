@@ -18,6 +18,8 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--strategy', help='Name of the strategy. Default: int(1e3)',
                     type=str, default='FAE')
+parser.add_argument('--n_witnesses', help='Name of the strategy. Default: int(1e3)',
+                    type=int, default=500)
 parser.add_argument('--device', help='GPU ID. Default: 0',
                     type=int, default=0)
 args = parser.parse_args()
