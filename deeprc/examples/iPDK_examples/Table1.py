@@ -41,7 +41,7 @@ config = {"sequence_reduction_fraction": 0.1,
           'used_sequence_labels_column': 'is_signal_TPR_20%_FDR_50%',
           'evaluate_at': int(2e2),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'),
-          "dataset": f"HIV/v6/phenotype_burden_500",
+          "dataset": f"HIV/v6/phenotype_burden_{args.n_witnesses}",
           "Branch": "HIV",
           'kernel_size': 9,
           'n_kernels': 32,
@@ -92,8 +92,6 @@ hdf5_file, n_repertoires = create_hdf5_file(
     sequence_column='cdr3_aa',
     sequence_counts_column=None,
     sequence_labels_columns=all_labels_columns)
-
-fold = args.fold
 
 for fold in range(len(folds)):
     seed = seeds[fold]
