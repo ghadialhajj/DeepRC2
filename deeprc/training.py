@@ -33,7 +33,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
           load_file: str = None, device: torch.device = torch.device('cuda:1'),
           num_torch_threads: int = 4, learning_rate: float = 1e-4, l1_weight_decay: float = 0,
           l2_weight_decay: float = 0, log_training_stats_at: int = int(1e2), evaluate_at: int = int(5e3),
-          ignore_missing_target_values: bool = True,
+          ignore_missing_target_values: bool = True, seq_loss_lambda: float = 1.0,
           with_seq_loss: bool = False, log: bool = True,
           track_test: bool = False):
     """Train a DeepRC model on a given dataset on tasks specified in `task_definition`
@@ -176,12 +176,12 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                                                                                sequence_labels)
 
                     if with_seq_loss:
-                        loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
+                        loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss * seq_loss_lambda
                     else:
                         loss = pred_loss + l1reg_loss * l1_weight_decay
 
                     with torch.no_grad():
-                        total_loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss
+                        total_loss = pred_loss + l1reg_loss * l1_weight_decay + attention_loss * seq_loss_lambda
                     # Perform update
                     loss.backward()
                     optimizer.step()
