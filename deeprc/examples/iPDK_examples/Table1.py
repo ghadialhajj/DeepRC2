@@ -29,8 +29,8 @@ args = parser.parse_args()
 device_name = f"cuda:{args.device}"
 device = torch.device(device_name)
 
-root_dir = "/storage/ghadia/DeepRC2/deeprc"
-# root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
+# root_dir = "/storage/ghadia/DeepRC2/deeprc"
+root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
 hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': None, 'FE': "factor_as_attention", 'TE': 'seq_loss_lambda',
                     'Vanilla': 'l2_lambda'}
@@ -104,6 +104,7 @@ for fold in range(len(folds)):
         task_definition=task_definition,
         metadata_file=f"{root_dir}/datasets/{config['dataset']}/data/metadata.csv",
         metadata_file_column_sep=",",
+        n_worker_processes=8,
         metadata_file_id_column='filename',
         used_sequence_labels_column=config['used_sequence_labels_column'],
         sample_n_sequences=config['sample_n_sequences'],
