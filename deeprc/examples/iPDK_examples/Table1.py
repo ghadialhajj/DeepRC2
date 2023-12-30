@@ -30,10 +30,10 @@ device = torch.device(device_name)
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
 # root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
-hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': None, 'FE': "factor_as_attention", 'TE': 'lambda',
-                    'Vanilla': None}
+hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': None, 'FE': "factor_as_attention", 'TE': 'seq_loss_lambda',
+                    'Vanilla': 'l2_lambda'}
 hyperparams_values = {'mul_att_by_factor': [20, 100, 500], 'factor_as_attention': [20, 100, 500],
-                      'lambda': [0.01, 0.1, 1.0]}
+                      'l2_lambda': [0.01, 0.1, 1.0], 'seq_loss_lambda': [0.01, 0.1, 1.0]}
 
 config = {"sequence_reduction_fraction": 0.1,
           "reduction_mb_size": int(5e3),
@@ -53,6 +53,8 @@ config = {"sequence_reduction_fraction": 0.1,
           "mul_att_by_factor": False,
           "factor_as_attention": None,
           "average_pooling": False,
+          "l2_lambda": 0,
+          "seq_loss_lambda": 0,
           "device": device,
           'fpa': False,
           'fps': False}
@@ -146,7 +148,8 @@ for fold in range(len(folds)):
                          logger=logger, n_updates=config['n_updates'], evaluate_at=config['evaluate_at'], device=device,
                          results_directory=f"{root_dir}{results_dir}", track_test=False, log=True,
                          log_training_stats_at=config['log_training_stats_at'], testset_eval_dataloader=test_eval_dl,
-                         with_seq_loss=config["with_seq_loss"])
+                         with_seq_loss=config["with_seq_loss"], l2_weight_decay=config["l2_lambda"],
+                         seq_loss_lambda=config["seq_loss_lambda"])
         if val_loss < best_loss:
             best_model = copy.deepcopy(model)
             best_loss = val_loss
