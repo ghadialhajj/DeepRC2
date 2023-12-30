@@ -15,7 +15,6 @@ from deeprc.utils import Logger, eval_on_test
 import argparse
 
 parser = argparse.ArgumentParser()
-args = parser.parse_args()
 
 parser.add_argument('--fold', help='Fold index. Default: 0',
                     type=int, default=0)
@@ -24,6 +23,7 @@ parser.add_argument('--strategy', help='Name of the strategy. Default: int(1e3)'
 parser.add_argument('--device', help='GPU ID. Default: 0',
                     type=int, default=0)
 
+args = parser.parse_args()
 device_name = f"cuda:{args.device}"
 device = torch.device(device_name)
 
@@ -119,7 +119,7 @@ for used_sequence_labels_column in all_labels_columns:
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    run = wandb.init(project="HIV - HMs", group=config['strategy'], reinit=True, config=config)
+    run = wandb.init(project="HIV - HM", group=config['strategy'], reinit=True, config=config)
     run.name = f"results_idx_{str(fold)}"
 
     # Create sequence embedding network (for CNN, kernel_size and n_kernels are important hyper-parameters)

@@ -15,7 +15,6 @@ from deeprc.utils import Logger, eval_on_test
 import argparse
 
 parser = argparse.ArgumentParser()
-args = parser.parse_args()
 
 parser.add_argument('--fold', help='Fold index. Default: 0',
                     type=int, default=0)
@@ -24,6 +23,7 @@ parser.add_argument('--strategy', help='Name of the strategy. Default: int(1e3)'
 parser.add_argument('--device', help='GPU ID. Default: 0',
                     type=int, default=0)
 
+args = parser.parse_args()
 device_name = f"cuda:{args.device}"
 device = torch.device(device_name)
 
@@ -32,21 +32,21 @@ root_dir = "/storage/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
 hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': None, 'FE': "factor_as_attention", 'TE': 'lambda',
                     'Vanilla': None}
-hyperparams_values = {'mul_att_by_factor': [10], 'factor_as_attention': [10],
-                      'lambda': [0.01]}
+hyperparams_values = {'mul_att_by_factor': 10, 'factor_as_attention': 10,
+                      'lambda': 0.01}
 
 config = {"sequence_reduction_fraction": 0.1,
           "reduction_mb_size": int(5e3),
           'strategy': 'FAE',
           'used_sequence_labels_column': 'is_signal_TPR_20%_FDR_50%',
-          'evaluate_at': int(2e2),
+          'evaluate_at': int(1),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'),
           "dataset": f"HIV/v6/phenotype_burden_500",
           "Branch": "HIV",
           'kernel_size': 9,
           'n_kernels': 32,
           'log_training_stats_at': int(1e2),
-          'n_updates': int(5e3),
+          'n_updates': int(2),
           'sample_n_sequences': int(1e4),
           'learning_rate': 1e-4,
           "with_seq_loss": False,
@@ -115,13 +115,13 @@ for n_training_samples in [360, 180, 96, 48, 12]:
     best_loss = +np.inf
     best_model = None
 
-    hyperparams_val = hyperparams_values[hyperparam_name][0]
+    hyperparams_val = hyperparams_values[hyperparam_name]
     config[hyperparam_name] = hyperparams_val
     config['fold'] = fold
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    run = wandb.init(project="HIV - v8", group=f"{config['strategy']}", reinit=True, config=config, )
+    run = wandb.init(project="HIV - T2", group=f"{config['strategy']}", reinit=True, config=config, )
     run.name = f"results_idx_{str(fold)}"
 
     # Create sequence embedding network (for CNN, kernel_size and n_kernels are important hyper-parameters)
