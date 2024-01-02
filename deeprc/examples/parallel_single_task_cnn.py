@@ -73,42 +73,31 @@ all_labels_columns = ['is_signal_TPR_20%_FDR_50%']
 
 if __name__ == '__main__':
     for n_training_samples in [360]:
-        loss_config = {"min_cnt": 1, "normalize": False, "add_in_loss": False}
         config = {"sequence_reduction_fraction": 0.1, "reduction_mb_size": int(5e3),
-                  "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'), "prop": 0.02,
-                  "dataset": f"phenotype_burden_500", "pos_weight_seq": 100, "pos_weight_rep": 1.,
-                  "Branch": "HIV", "dataset_type": "HIV/v6", "attention_temperature": 0,
-                  "consider_seq_counts": False,
-                  "add_positional_information": True, "per_for_tmp": 0,
-                  "non_zeros_only": False, "n_training_samples": n_training_samples}
-        # todo: when scaling with PDRC, I didn't use FPS and FPA. Try with them
+                  "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'),
+                  "dataset": f"phenotype_burden_500",
+                  "Branch": "HIV", "dataset_type": "HIV/v6",
+                  "n_training_samples": n_training_samples}
+
         results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
         # strategy = "TE"
-        # strategy = "FG"
-        # strategy = "TASTE"
-        # strategy = "TASTER"
         # strategy = "AP"
         # strategy = "FAE"
         # strategy = "FE"
         strategy = "PDRC"
-        # strategy = "SInS"
-        fpa, fps, wsw, wsi = False, False, False, False
-        scaling_fn = no_sequence_count_scaling
-        config.update({"scaling_fn": scaling_fn})
+        fpa, fps = False, False
+
         max_aucs = []
         seeds_list = [0, 1, 2]
         seed = seeds_list[args.idx]
-        # seed = 0
-        # for seed in seeds_list:
+
         for used_sequence_labels in all_labels_columns:
             config.update({"used_sequence_labels": used_sequence_labels})
             n_kernels, kernel_size = 32, 9
             task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
                 BinaryTarget(column_name='label_positive', true_class_value='True'),
-                Sequence_Target(pos_weight=config["pos_weight_seq"], weigh_seq_by_weight=wsw, weigh_pos_by_inverse=wsi,
-                                normalize=loss_config["normalize"], add_in_loss=loss_config["add_in_loss"],
-                                device=device), ]).to(device=device)
-            #
+                Sequence_Target(device=device), ]).to(device=device)
+
             trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloaders(
                 task_definition=task_definition,
                 metadata_file=f"{root_dir}/datasets/{config['dataset_type']}/{config['dataset']}/data/metadata.csv",
@@ -122,40 +111,34 @@ if __name__ == '__main__':
                 sample_n_sequences=args.sample_n_sequences,
                 sequence_counts_column=None,
                 sequence_counts_scaling_fn=no_sequence_count_scaling,
-                non_zeros_only=config["non_zeros_only"],
-                with_test=with_test,
                 force_pos_in_subsampling=fps,
-                min_count=loss_config["min_cnt"],
                 n_training_samples=config["n_training_samples"],
             )
-            dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval}
-            if with_test:
-                dl_dict.update({"testset_eval": testset_eval})
-            logger = Logger(dataloaders=dl_dict, with_FPs=False, strategy=strategy)
+            dl_dict = {"trainingset_eval": trainingset_eval, "validationset_eval": validationset_eval,
+                       "testset_eval": testset_eval}
+
+            logger = Logger(dataloaders=dl_dict, strategy=strategy)
 
             if strategy == "TE":
                 config.update(
-                    {"plain_DeepRC": False, "mul_att_by_factor": False, "shift_by_factor": None, "use_softmax": True,
-                     "factor_as_attention": None, "average_pooling": False})
+                    {"plain_DeepRC": False, "mul_att_by_factor": False, "factor_as_attention": None,
+                     "average_pooling": False})
             elif strategy == "PDRC":
                 config.update(
-                    {"plain_DeepRC": True, "mul_att_by_factor": False, "shift_by_factor": None, "use_softmax": True,
-                     "factor_as_attention": None, "average_pooling": False})
+                    {"plain_DeepRC": True, "mul_att_by_factor": False, "factor_as_attention": None,
+                     "average_pooling": False})
             elif strategy == "FE":
                 config.update(
-                    {"plain_DeepRC": True, "mul_att_by_factor": False, "use_softmax": True, "shift_by_factor": None,
-                     "factor_as_attention": 100, "average_pooling": False})
+                    {"plain_DeepRC": True, "mul_att_by_factor": False, "factor_as_attention": 100,
+                     "average_pooling": False})
             elif strategy == "AP":
                 config.update(
-                    {"plain_DeepRC": True, "mul_att_by_factor": False, "use_softmax": True, "shift_by_factor": None,
-                     "factor_as_attention": None, "average_pooling": True})
+                    {"plain_DeepRC": True, "mul_att_by_factor": False, "factor_as_attention": None,
+                     "average_pooling": True})
             elif strategy == "FAE":
                 config.update(
-                    {"plain_DeepRC": True, "mul_att_by_factor": 100, "shift_by_factor": None, "use_softmax": True,
-                     "factor_as_attention": None, "average_pooling": False})
-            elif strategy == "SInS":  # shift inside softmax
-                config.update({"plain_DeepRC": True, "mul_att_by_factor": False, "shift_by_factor": 10,
-                               "factor_as_attention": None, "average_pooling": False})
+                    {"plain_DeepRC": True, "mul_att_by_factor": 100, "factor_as_attention": None,
+                     "average_pooling": False})
             else:
                 raise "Invalid strategy"
             try:
@@ -168,9 +151,8 @@ if __name__ == '__main__':
 
                 wandb.config.update(args)
                 wandb.config.update(config)
-                wandb.config.update(loss_config)
                 wandb.config.update(
-                    {"fpa": fpa, "fps": fps, "wsw": wsw, "wsi": wsi})
+                    {"fpa": fpa, "fps": fps})
                 wandb.config.update({"n_kernels": n_kernels, "kernel_size": kernel_size})
 
                 print("Dataloaders with lengths: ",
@@ -178,7 +160,7 @@ if __name__ == '__main__':
 
                 # Create sequence embedding network (for CNN, kernel_size and n_kernels are important hyper-parameters)
                 sequence_embedding_network = SequenceEmbeddingCNN(
-                    n_input_features=20 + 3 * config["add_positional_information"], kernel_size=kernel_size,
+                    n_input_features=20 + 3, kernel_size=kernel_size,
                     n_kernels=n_kernels, n_layers=1)
                 # Create attention network
                 attention_network = AttentionNetwork(n_input_features=n_kernels, n_layers=2, n_units=32)
@@ -188,28 +170,22 @@ if __name__ == '__main__':
                                                n_units=32)
                 model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
                                attention_network=attention_network, output_network=output_network,
-                               consider_seq_counts=config["consider_seq_counts"], n_input_features=20,
-                               add_positional_information=config["add_positional_information"], training_mode=True,
+                               consider_seq_counts=False, n_input_features=20,
+                               training_mode=True,
                                sequence_reduction_fraction=config["sequence_reduction_fraction"],
                                reduction_mb_size=config["reduction_mb_size"], device=device,
-                               forced_attention=False, force_pos_in_attention=fpa,
-                               temperature=config["attention_temperature"], use_softmax=config["use_softmax"],
+                               force_pos_in_attention=fpa,
                                mul_att_by_factor=config["mul_att_by_factor"], average_pooling=config["average_pooling"],
-                               factor_as_attention=config["factor_as_attention"],
-                               per_for_tmp=config["per_for_tmp"], shift_by_factor=config["shift_by_factor"]).to(
-                    device=device)
+                               factor_as_attention=config["factor_as_attention"]).to(device=device)
 
                 max_auc = train(model, task_definition=task_definition, trainingset_dataloader=trainingset,
                                 trainingset_eval_dataloader=trainingset_eval, learning_rate=args.learning_rate,
                                 early_stopping_target_id='label_positive',
                                 validationset_eval_dataloader=validationset_eval,
                                 logger=logger, n_updates=args.n_updates, evaluate_at=args.evaluate_at, device=device,
-                                results_directory=f"{root_dir}{results_dir}", prop=config["prop"],
+                                results_directory=f"{root_dir}{results_dir}",
                                 log_training_stats_at=args.log_training_stats_at, testset_eval_dataloader=testset_eval,
-                                train_then_freeze=False,
-                                staged_training=False,
-                                plain_DeepRC=config["plain_DeepRC"], log=True,
-                                config=config, loss_config=loss_config, track_test=False)
+                                with_seq_loss=not config["plain_DeepRC"], log=True, track_test=False)
 
                 # logger.log_stats(model=model, device=device, step=args.n_updates)
                 max_aucs.append(max_auc)
