@@ -76,9 +76,6 @@ all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is
                       'is_signal_TPR_100%_FDR_80%']
 
 # read pkl file and save folds as np array
-# with open(f"{root_dir}/datasets/HIV/v6/splits_used.pkl", 'rb') as f:
-#     folds = np.array(pkl.load(f)).tolist()
-
 with open(f"/storage/ghadia/DeepRC2/deeprc/used_inds.pkl", 'rb') as f:
     folds = np.array(pkl.load(f)).tolist()
 
