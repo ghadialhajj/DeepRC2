@@ -8,14 +8,12 @@ Contact -- widrich@ml.jku.at
 import os
 from itertools import chain
 
-from deeprc.estorch.pytorchtools import EarlyStopping
 import numpy as np
 import torch
 from tqdm import tqdm
 from widis_lstm_tools.utils.collection import TeePrint, SaverLoader, close_all
 from deeprc.task_definitions import TaskDefinition
 import wandb
-from typing import Tuple
 from deeprc.utils import Logger, evaluate
 
 
@@ -88,9 +86,6 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
          available for all samples but might increase the computation time per update.
     """
 
-    # initialize the early_stopping object
-    early_stopping = EarlyStopping(patience=1000, verbose=True)
-
     os.makedirs(results_directory, exist_ok=True)
 
     # Read config file and set up results folder
@@ -135,7 +130,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
         #
         # Start training
         #
-        log_scores(device, early_stopping, early_stopping_target_id, logger,
+        log_scores(device, early_stopping_target_id, logger,
                    model, task_definition, tprint, trainingset_eval_dataloader,
                    update, validationset_eval_dataloader, testset_eval_dataloader)
         try:
@@ -207,23 +202,21 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                                       step=update)  # sum losses over targets + l1 + att.
 
                             group = 'gradients/'
-                            cnn_weights = torch.mean(model.sequence_embedding.network[0].weight)
-                            seq_grad = list(model.sequence_embedding.parameters())[0].grad.mean().cpu().numpy()
-                            wandb.log(
-                                {f"{group}sequence_embedding_grad_mean": seq_grad}, step=update)
-                            wandb.log({f"{group}attention_nn_grad_mean": list(model.attention_nn.parameters())[
-                                0].grad.mean().cpu().numpy()}, step=update)
-                            wandb.log({f"{group}output_nn_grad_mean": list(model.output_nn.parameters())[
-                                0].grad.mean().cpu().numpy()}, step=update)
-                            wandb.log({f"{group}cnn_weights": cnn_weights},
-                                      step=update)
-                            wandb.log({f"{group}learning_rate": optimizer.param_groups[0]["lr"]},
-                                      step=update)
+                            cnn_weights = torch.norm(model.sequence_embedding.network[0].weight)
+                            seq_grad = torch.norm(list(model.sequence_embedding.parameters())[0].grad).cpu().numpy()
+                            att_grad = torch.norm(list(model.attention_nn.parameters())[0].grad).cpu().numpy()
+                            out_grad = torch.norm(list(model.output_nn.parameters())[0].grad).cpu().numpy()
+
+                            wandb.log({f"{group}sequence_embedding_grad_mean": seq_grad}, step=update)
+                            wandb.log({f"{group}attention_nn_grad_mean": att_grad}, step=update)
+                            wandb.log({f"{group}output_nn_grad_mean": out_grad}, step=update)
+                            wandb.log({f"{group}cnn_weights": cnn_weights}, step=update)
+                            wandb.log({f"{group}learning_rate": optimizer.param_groups[0]["lr"]}, step=update)
 
                     # Calculate scores and loss on training set and validation set
                     if update % evaluate_at == 0 or update == n_updates:
                         # if update in [10, 100, 1000, 5000, 10000, 15000, 20000] or update == n_updates:
-                        scores, scoring_loss = log_scores(device, early_stopping, early_stopping_target_id, logger,
+                        scores, scoring_loss = log_scores(device, early_stopping_target_id, logger,
                                                           model, task_definition, tprint, trainingset_eval_dataloader,
                                                           update, validationset_eval_dataloader,
                                                           testset_eval_dataloader, track_test=track_test)
@@ -243,9 +236,6 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                     if update >= n_updates:
                         break
 
-                if early_stopping.early_stop:
-                    print("Early stopping")
-                    raise ESException
             update_progess_bar.close()
         finally:
             # In any case, save the current model and best model to a file
@@ -255,16 +245,12 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
             model.training_mode = False
             print('Finished Training!')
 
-    except Exception as e:
-        with open(logfile, 'a') as lf:
-            print(f"Exception: {e}", file=lf)
-        raise e
     finally:
         close_all()  # Clean up
     return best_validation_loss
 
 
-def log_scores(device, early_stopping, early_stopping_target_id, logger, model, task_definition, tprint,
+def log_scores(device, early_stopping_target_id, logger, model, task_definition, tprint,
                trainingset_eval_dataloader, update, validationset_eval_dataloader, testset_eval_dataloader,
                track_test=False):
     classes_dict = task_definition.__sequence_targets__[0].classes_dict
@@ -294,7 +280,6 @@ def log_scores(device, early_stopping, early_stopping_target_id, logger, model, 
                                        task_definition=task_definition, device=device, logger=logger, step=update,
                                        log_stats=True)
     scoring_loss = scores[early_stopping_target_id]['loss']
-    early_stopping(scoring_loss, model)
 
     tprint(f"[validation] u: {update:07d}; scores: {scores};")
     group = 'validation/'

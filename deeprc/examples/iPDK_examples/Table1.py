@@ -79,7 +79,7 @@ all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is
 # with open(f"{root_dir}/datasets/HIV/v6/splits_used.pkl", 'rb') as f:
 #     folds = np.array(pkl.load(f)).tolist()
 
-with open(f"/storage/ghadia/DeepRC2/deeprc/good_inds.pkl", 'rb') as f:
+with open(f"/storage/ghadia/DeepRC2/deeprc/used_inds.pkl", 'rb') as f:
     folds = np.array(pkl.load(f)).tolist()
 
 seeds = [0, 1, 2, 3, 4]
