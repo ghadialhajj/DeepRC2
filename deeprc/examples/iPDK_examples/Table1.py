@@ -21,7 +21,7 @@ parser.add_argument('--strategy', help='Name of the strategy. Default: int(1e3)'
 parser.add_argument('--n_witnesses', help='Name of the strategy. Default: int(1e3)',
                     type=int, default=500)
 parser.add_argument('--n_updates', help='Name of the strategy. Default: int(1e3)',
-                    type=int, default=int(2e4))
+                    type=int, default=int(3e4))
 parser.add_argument('--device', help='GPU ID. Default: 0',
                     type=int, default=0)
 args = parser.parse_args()
@@ -29,13 +29,13 @@ args = parser.parse_args()
 device_name = f"cuda:{args.device}"
 device = torch.device(device_name)
 
-# root_dir = "/storage/ghadia/DeepRC2/deeprc"
-root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
+root_dir = "/storage/ghadia/DeepRC2/deeprc"
+# root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
 hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': None, 'FE': "factor_as_attention", 'TE': 'seq_loss_lambda',
                     'Vanilla': 'l2_lambda'}
 hyperparams_values = {'mul_att_by_factor': [20, 100, 500], 'factor_as_attention': [20, 100, 500],
-                      'l2_lambda': [0.01, 0.1, 1.0], 'seq_loss_lambda': [0.01, 0.1, 1.0]}
+                      'l2_lambda': [0, 0.00001, 0.0001], 'seq_loss_lambda': [0.01, 0.1, 1.0]}
 
 config = {"sequence_reduction_fraction": 0.1,
           "reduction_mb_size": int(5e3),
@@ -60,6 +60,7 @@ config = {"sequence_reduction_fraction": 0.1,
           "device": device,
           'fpa': False,
           'fps': False}
+config.update(vars(args))
 
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
 
@@ -75,7 +76,10 @@ all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is
                       'is_signal_TPR_100%_FDR_80%']
 
 # read pkl file and save folds as np array
-with open(f"{root_dir}/datasets/HIV/v6/splits_used.pkl", 'rb') as f:
+# with open(f"{root_dir}/datasets/HIV/v6/splits_used.pkl", 'rb') as f:
+#     folds = np.array(pkl.load(f)).tolist()
+
+with open(f"/storage/ghadia/DeepRC2/deeprc/good_inds.pkl", 'rb') as f:
     folds = np.array(pkl.load(f)).tolist()
 
 seeds = [0, 1, 2, 3, 4]
@@ -125,12 +129,11 @@ for fold in range(len(folds)):
         torch.manual_seed(seed)
         np.random.seed(seed)
 
-        run = wandb.init(project="HIV - T1", group=f"{config['strategy']}", reinit=True, config=config, )
+        run = wandb.init(project="HIV - Table1", group=f"{config['strategy']}", reinit=True, config=config, )
         run.name = f"results_idx_{str(fold)}"
         # Create sequence embedding network (for CNN, kernel_size and n_kernels are important hyper-parameters)
-        sequence_embedding_network = SequenceEmbeddingCNN(
-            n_input_features=20 + 3, kernel_size=config['kernel_size'],
-            n_kernels=config['n_kernels'], n_layers=1)
+        sequence_embedding_network = SequenceEmbeddingCNN(n_input_features=20 + 3, kernel_size=config['kernel_size'],
+                                                          n_kernels=config['n_kernels'], n_layers=1)
         # Create attention network
         attention_network = AttentionNetwork(n_input_features=config['n_kernels'], n_layers=2, n_units=32)
         # Create output network
