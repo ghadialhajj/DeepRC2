@@ -20,6 +20,8 @@ parser.add_argument('--fold', help='Fold index. Default: 0',
                     type=int, default=0)
 parser.add_argument('--strategy', help='Name of the strategy. Default: int(1e3)',
                     type=str, default='FAE')
+parser.add_argument('--n_updates', help='Name of the strategy. Default: int(1e3)',
+                    type=int, default=int(3e4))
 parser.add_argument('--device', help='GPU ID. Default: 0',
                     type=int, default=0)
 
@@ -30,32 +32,36 @@ device = torch.device(device_name)
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
 # root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
-hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': None, 'FE': "factor_as_attention", 'TE': 'lambda',
-                    'Vanilla': None}
-hyperparams_values = {'mul_att_by_factor': 10, 'factor_as_attention': 10,
-                      'lambda': 0.01}
+hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': None, 'FE': "factor_as_attention", 'TE': 'seq_loss_lambda',
+                    'Vanilla': 'l2_lambda'}
+
+with open(f"{root_dir}/examples/iPDK_examples/best_HPs_{args.strategy}.pkl", 'rb') as f:
+    hyperparams_values = pkl.load(f)
 
 config = {"sequence_reduction_fraction": 0.1,
           "reduction_mb_size": int(5e3),
-          'strategy': 'FAE',
+          'strategy': args.strategy,
           'used_sequence_labels_column': 'is_signal_TPR_20%_FDR_50%',
-          'evaluate_at': int(1),
+          'evaluate_at': int(2e2),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'),
           "dataset": f"HIV/v6/phenotype_burden_500",
           "Branch": "HIV",
           'kernel_size': 9,
           'n_kernels': 32,
-          'log_training_stats_at': int(1e2),
-          'n_updates': int(2),
+          'log_training_stats_at': int(2e2),
+          'n_updates': args.n_updates,
           'sample_n_sequences': int(1e4),
           'learning_rate': 1e-4,
           "with_seq_loss": False,
           "mul_att_by_factor": False,
           "factor_as_attention": None,
           "average_pooling": False,
+          "l2_lambda": 0,
+          "seq_loss_lambda": 0,
           "device": device,
           'fpa': False,
           'fps': False}
+config.update(vars(args))
 
 results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
 
@@ -71,7 +77,7 @@ all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is
                       'is_signal_TPR_100%_FDR_80%']
 
 # read pkl file and save folds as np array
-with open(f"{root_dir}/datasets/HIV/v6/splits_used.pkl", 'rb') as f:
+with open(f"{root_dir}/used_inds.pkl", 'rb') as f:
     folds = np.array(pkl.load(f)).tolist()
 
 seeds = [0, 1, 2, 3, 4]
@@ -95,7 +101,7 @@ hdf5_file, n_repertoires = create_hdf5_file(
 
 fold = args.fold
 seed = seeds[fold]
-for n_training_samples in [360, 180, 96, 48, 12]:
+for n_training_samples in [180, 96, 48, 12]:
     train_dl, train_eval_dl, val_eval_dl, test_eval_dl = make_dataloaders(
         task_definition=task_definition,
         metadata_file=f"{root_dir}/datasets/{config['dataset']}/data/metadata.csv",
@@ -112,12 +118,11 @@ for n_training_samples in [360, 180, 96, 48, 12]:
 
     dl_dict = {"train_eval_dl": train_eval_dl, "val_eval_dl": val_eval_dl, "test_eval_dl": test_eval_dl}
     logger = Logger(dataloaders=dl_dict, strategy=config['strategy'])
-    best_loss = +np.inf
-    best_model = None
 
-    hyperparams_val = hyperparams_values[hyperparam_name]
-    config[hyperparam_name] = hyperparams_val
+    hyperparam_val = hyperparams_values[fold]
+    config[hyperparam_name] = hyperparam_val
     config['fold'] = fold
+    config['n_training_samples'] = n_training_samples
     torch.manual_seed(seed)
     np.random.seed(seed)
 
@@ -148,6 +153,7 @@ for n_training_samples in [360, 180, 96, 48, 12]:
                      logger=logger, n_updates=config['n_updates'], evaluate_at=config['evaluate_at'], device=device,
                      results_directory=f"{root_dir}{results_dir}", track_test=False, log=True,
                      log_training_stats_at=config['log_training_stats_at'], testset_eval_dataloader=test_eval_dl,
-                     with_seq_loss=config["with_seq_loss"])
+                     with_seq_loss=config["with_seq_loss"], l2_weight_decay=config["l2_lambda"],
+                     seq_loss_lambda=config["seq_loss_lambda"])
 
     eval_on_test(task_definition, model, test_eval_dl, logger, device, config['n_updates'])
