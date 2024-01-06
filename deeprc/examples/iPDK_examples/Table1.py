@@ -76,7 +76,7 @@ all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is
                       'is_signal_TPR_100%_FDR_80%']
 
 # read pkl file and save folds as np array
-with open(f"/storage/ghadia/DeepRC2/deeprc/used_inds.pkl", 'rb') as f:
+with open(f"{root_dir}/used_inds.pkl", 'rb') as f:
     folds = np.array(pkl.load(f)).tolist()
 
 seeds = [0, 1, 2, 3, 4]
@@ -105,7 +105,6 @@ for fold in range(len(folds)):
         task_definition=task_definition,
         metadata_file=f"{root_dir}/datasets/{config['dataset']}/data/metadata.csv",
         metadata_file_column_sep=",",
-        n_worker_processes=8,
         metadata_file_id_column='filename',
         used_sequence_labels_column=config['used_sequence_labels_column'],
         sample_n_sequences=config['sample_n_sequences'],
