@@ -34,8 +34,8 @@ root_dir = "/storage/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
 hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': None, 'FE': "factor_as_attention", 'TE': 'lambda',
                     'Vanilla': None}
-hyperparams_values = {'mul_att_by_factor': {0: 20, 1: 20, 2: 20, 3: 20, 4: 100},
-                      'factor_as_attention': {0: 100, 1: 20, 2: 500, 3: 20, 4: 500},
+hyperparams_values = {'factor_as_attention': {0: 20, 1: 20, 2: 20, 3: 20, 4: 100},
+                      'mul_att_by_factor': {0: 100, 1: 20, 2: 500, 3: 20, 4: 500},
                       'lambda': {0: 1, 1: 0.1, 2: 1, 3: 0.1, 4: 0.1}}
 
 config = {"sequence_reduction_fraction": 0.1,
