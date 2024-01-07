@@ -18,6 +18,8 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--fold', help='Fold index. Default: 0',
                     type=int, default=0)
+parser.add_argument('--n_updates', help='Fold index. Default: 0',
+                    type=int, default=int(3e4))
 parser.add_argument('--strategy', help='Name of the strategy. Default: int(1e3)',
                     type=str, default='FAE')
 parser.add_argument('--device', help='GPU ID. Default: 0',
@@ -32,26 +34,29 @@ root_dir = "/storage/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
 hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': None, 'FE': "factor_as_attention", 'TE': 'lambda',
                     'Vanilla': None}
-hyperparams_values = {'mul_att_by_factor': [10], 'factor_as_attention': [10],
-                      'lambda': [0.01]}
+hyperparams_values = {'mul_att_by_factor': {0: 20, 1: 20, 2: 20, 3: 20, 4: 100},
+                      'factor_as_attention': {0: 100, 1: 20, 2: 500, 3: 20, 4: 500},
+                      'lambda': {0: 1, 1: 0.1, 2: 1, 3: 0.1, 4: 0.1}}
 
 config = {"sequence_reduction_fraction": 0.1,
           "reduction_mb_size": int(5e3),
-          'strategy': 'FAE',  # ['FAE', 'TE', 'FE'],
-          'evaluate_at': int(1),
+          'strategy': args.strategy,  # ['FAE', 'TE', 'FE'],
+          'evaluate_at': int(2e2),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'),
-          "dataset": f"HIV/v6/phenotype_burden_500",
+          "dataset": f"HIV/v6/phenotype_burden_25",
           "Branch": "HIV",
           'kernel_size': 9,
           'n_kernels': 32,
           'log_training_stats_at': int(1e2),
-          'n_updates': int(2),
+          'n_updates': args.n_updates,
           'sample_n_sequences': int(1e4),
           'learning_rate': 1e-4,
           "with_seq_loss": False,
           "mul_att_by_factor": False,
           "factor_as_attention": None,
           "average_pooling": False,
+          "l2_lambda": 0,
+          "seq_loss_lambda": 0,
           "device": device,
           'fpa': False,
           'fps': False}
@@ -70,7 +75,7 @@ all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is
                       'is_signal_TPR_100%_FDR_80%']
 
 # read pkl file and save folds as np array
-with open(f"{root_dir}/datasets/HIV/v6/splits_used.pkl", 'rb') as f:
+with open(f"{root_dir}/used_inds.pkl", 'rb') as f:
     folds = np.array(pkl.load(f)).tolist()
 
 seeds = [0, 1, 2, 3, 4]
@@ -87,7 +92,13 @@ hdf5_file, n_repertoires = create_hdf5_file(
 
 fold = args.fold
 seed = seeds[fold]
-for used_sequence_labels_column in all_labels_columns:
+hyperparam_name = hyperparam_names[config['strategy']]
+hyperparams_val = hyperparams_values[hyperparam_name][fold]
+config['fold'] = fold
+
+for id in range(len(all_labels_columns)):
+    used_sequence_labels_column = all_labels_columns[id]
+    config['id'] = id
     config['used_sequence_labels_column'] = used_sequence_labels_column
     train_dl, train_eval_dl, val_eval_dl, test_eval_dl = make_dataloaders(
         task_definition=task_definition,
@@ -101,21 +112,16 @@ for used_sequence_labels_column in all_labels_columns:
         force_pos_in_subsampling=config['fps'],
         n_repertoires=n_repertoires,
         hdf5_file=hdf5_file)
-
     dl_dict = {"train_eval_dl": train_eval_dl, "val_eval_dl": val_eval_dl, "test_eval_dl": test_eval_dl}
 
-    hyperparam_name = hyperparam_names[config['strategy']]
     if config['strategy'] == "TE":
         config.update({'with_seq_loss': True})
     elif config['strategy'] == "AP":
         config.update({"average_pooling": True})
     logger = Logger(dataloaders=dl_dict, strategy=config['strategy'])
 
-    if hyperparam_name is not None:
-        hyperparams_val = hyperparams_values[hyperparam_name][0]
-        config[hyperparam_name] = hyperparams_val
+    config[hyperparam_name] = hyperparams_val
 
-    config['fold'] = fold
     torch.manual_seed(seed)
     np.random.seed(seed)
 
@@ -144,10 +150,9 @@ for used_sequence_labels_column in all_labels_columns:
                      trainingset_eval_dataloader=train_eval_dl, learning_rate=config['learning_rate'],
                      early_stopping_target_id='label_positive', validationset_eval_dataloader=val_eval_dl,
                      logger=logger, n_updates=config['n_updates'], evaluate_at=config['evaluate_at'],
-                     device=device,
-                     results_directory=f"{root_dir}{results_dir}", track_test=False, log=True,
+                     device=device, results_directory=f"{root_dir}{results_dir}", track_test=False, log=True,
                      log_training_stats_at=config['log_training_stats_at'],
-                     testset_eval_dataloader=test_eval_dl,
-                     with_seq_loss=config["with_seq_loss"])
+                     testset_eval_dataloader=test_eval_dl, with_seq_loss=config["with_seq_loss"],
+                     l2_weight_decay=config["l2_lambda"], seq_loss_lambda=config["seq_loss_lambda"])
 
     eval_on_test(task_definition, model, test_eval_dl, logger, device, config['n_updates'])
