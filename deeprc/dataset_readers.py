@@ -203,7 +203,7 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, repert
                       shuffled_repertoire_inds[s_i*n_repertoires_per_split:]  # Remaining repertoires to last split
                       for s_i in range(n_splits)]
     else:
-        split_inds = [np.array(split_ind, dtype=np.int) for split_ind in split_inds]
+        split_inds = [np.array(split_ind, dtype=int) for split_ind in split_inds]
     
     if cross_validation_fold >= len(split_inds):
         raise ValueError(f"Demanded `cross_validation_fold` {cross_validation_fold} but only {len(split_inds)} splits "
@@ -267,10 +267,10 @@ def str_or_byte_to_str(str_or_byte: Union[str, bytes], decoding: str = 'utf8') -
 
 class RepertoireDataset(Dataset):
     def __init__(self, metadata_filepath: str, hdf5_filepath: str, inputformat: str = 'NCL',
-                 sample_id_column: str = 'ID', metadata_file_column_sep: str = '\t',
-                 task_definition: TaskDefinition = None,
-                 keep_in_ram: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
-                 sample_n_sequences: int = None, verbose: bool = True):
+                 sample_id_column: str = 'ID', sample_weight_column: str = 'weight',
+                 metadata_file_column_sep: str = '\t', task_definition: TaskDefinition = None, keep_in_ram: bool = True,
+                 sequence_counts_scaling_fn: Callable = no_sequence_count_scaling, sample_n_sequences: int = None,
+                 verbose: bool = True):
         """PyTorch Dataset class for reading repertoire dataset from metadata file and hdf5 file
         
         See `deeprc.dataset_readers.make_dataloaders` for simple loading of datasets via PyTorch data loader.
@@ -310,6 +310,7 @@ class RepertoireDataset(Dataset):
         self.inputformat = inputformat
         self.task_definition = task_definition
         self.sample_id_column = sample_id_column
+        self.sample_weight_column = sample_weight_column
         self.keep_in_ram = keep_in_ram
         self.sequence_counts_scaling_fn = sequence_counts_scaling_fn
         self.metadata_file_column_sep = metadata_file_column_sep
@@ -327,6 +328,7 @@ class RepertoireDataset(Dataset):
         self.sample_keys = np.array([os.path.splitext(k)[0] for k in self.metadata[self.sample_id_column].values])
         self.n_samples = len(self.sample_keys)
         self.target_features = self.task_definition.get_targets(self.metadata)
+        self.sample_weights = self.metadata[self.sample_weight_column].values
         
         # Read sequence data from hdf5 file
         with h5py.File(self.filepath, 'r') as hf:
@@ -340,12 +342,12 @@ class RepertoireDataset(Dataset):
             hdf5_sample_keys = [str_or_byte_to_str(os.path.splitext(k)[0]) for k in metadata['sample_keys'][:]]
             
             # Mapping metadata sample indices -> hdf5 file sample indices
-            unfound_samples = np.array([sk not in hdf5_sample_keys for sk in self.sample_keys], dtype=np.bool)
+            unfound_samples = np.array([sk not in hdf5_sample_keys for sk in self.sample_keys], dtype=bool)
             if np.any(unfound_samples):
                 raise KeyError(f"Samples {self.sample_keys[unfound_samples]} "
                                f"could not be found in hdf5 file. Please add the samples and re-create the hdf5 file "
                                f"or remove the sample keys from the used samples of the metadata file.")
-            self.hdf5_inds = np.array([hdf5_sample_keys.index(sk) for sk in self.sample_keys], dtype=np.int)
+            self.hdf5_inds = np.array([hdf5_sample_keys.index(sk) for sk in self.sample_keys], dtype=int)
             
             # Support old hdf5 format and check for missing hdf5 keys
             if self.sequence_counts_hdf5_key not in hf['sampledata'].keys():
@@ -367,7 +369,7 @@ class RepertoireDataset(Dataset):
                 sampledata = dict()
                 sampledata['seq_lens'] = hf['sampledata']['seq_lens'][:]
                 sampledata[self.sequence_counts_hdf5_key] =\
-                    np.array(hf['sampledata'][self.sequence_counts_hdf5_key][:], dtype=np.float32)
+                    np.array(hf['sampledata'][self.sequence_counts_hdf5_key][:], dtype=float)
                 if np.any(sampledata[self.sequence_counts_hdf5_key] <= 0):
                     print(f"Warning: Found {(sampledata[self.sequence_counts_hdf5_key] <= 0).sum()} sequences with "
                           f"counts <= 0. They will be handled as specified in the sequence_counts_scaling_fn "
@@ -482,11 +484,12 @@ class RepertoireDataset(Dataset):
             Sample ID.
         """
         target_features = self.target_features[idx]
+        sample_weight = self.sample_weights[idx]
         sample_id = str(self.sample_keys[idx])
         if sample_n_sequences is None:
             sample_n_sequences = self.sample_n_sequences
         sequences, seq_lens, counts_per_sequence = self.get_sample(idx, sample_n_sequences)
-        return target_features, sequences, seq_lens, counts_per_sequence, sample_id
+        return target_features, sequences, seq_lens, counts_per_sequence, sample_id, sample_weight
     
     def _vprint(self, *args, **kwargs):
         if self.verbose:
@@ -510,7 +513,7 @@ class RepertoireDatasetSubset(Dataset):
             If None, all sequences will be loaded as specified in `dataset`.
             Can be set for individual samples using `sample_n_sequences` parameter of __getitem__() method.
         """
-        self.indices = np.asarray(indices, dtype=np.int)
+        self.indices = np.asarray(indices, dtype=int)
         self.sample_n_sequences = sample_n_sequences
         self.repertoire_reader = dataset
         
@@ -551,6 +554,6 @@ class RepertoireDatasetSubset(Dataset):
         """
         if sample_n_sequences is None:
             sample_n_sequences = self.sample_n_sequences
-        target_features, sequences, seq_lens, counts_per_sequence, sample_id = \
+        target_features, sequences, seq_lens, counts_per_sequence, sample_id, sample_weight = \
             self.repertoire_reader.__getitem__(self.indices[idx], sample_n_sequences=sample_n_sequences)
-        return target_features, sequences, seq_lens, counts_per_sequence, sample_id
+        return target_features, sequences, seq_lens, counts_per_sequence, sample_id, sample_weight

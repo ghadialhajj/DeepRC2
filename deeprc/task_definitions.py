@@ -10,6 +10,7 @@ import pandas as pd
 from typing import List, Union
 import torch
 from sklearn import metrics
+from torch.nn.functional import binary_cross_entropy_with_logits
 
 
 class Target(torch.nn.Module):
@@ -36,7 +37,7 @@ class Target(torch.nn.Module):
         self.__target_id__ = target_id
         self.__n_output_features__ = n_output_features
         self.__task_weight__ = torch.nn.Parameter(torch.tensor(task_weight, dtype=torch.float), requires_grad=False)
-    
+
     def get_targets(self, dataframe: pd.DataFrame) -> np.ndarray:
         """Get target values of all samples from `dataframe` as np.array. `dataframe` is the content of the metadata
         file.
@@ -49,11 +50,11 @@ class Target(torch.nn.Module):
         Returns
         ---------
         targets: np.ndarray
-            Target values of all samples from `dataframe` as np.ndarray of datatype `np.float` and shape 
+            Target values of all samples from `dataframe` as np.ndarray of datatype `float` and shape 
             `(n_samples, self.n_output_features)`.
         """
         raise NotImplementedError("Please add your own get_targets() method to your Target class")
-    
+
     def activation_function(self, raw_outputs: torch.Tensor) -> torch.Tensor:
         """Activation function to apply to network outputs to create prediction
         
@@ -69,7 +70,7 @@ class Target(torch.nn.Module):
             Activated output of DeepRC network for this task as `torch.Tensor`.
         """
         raise NotImplementedError("Please add your own activation_function() method to your Target class")
-    
+
     def loss_function(self, raw_outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """Loss function used for training on this task
         
@@ -88,15 +89,15 @@ class Target(torch.nn.Module):
             Loss for this task as torch.Tensor of shape `(n_samples, 1)`.
         """
         raise NotImplementedError("Please add your own loss_function() method to your Target class")
-    
+
     def get_id(self) -> str:
         """Get target ID as string"""
         return self.__target_id__
-    
+
     def get_task_weight(self) -> torch.Tensor:
         """Get task weight as string"""
         return self.__task_weight__
-    
+
     def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor) -> dict:
         """Get scores for this task as dictionary
         
@@ -154,7 +155,7 @@ class BinaryTarget(Target):
         self.true_class_value = np.array(true_class_value)
         self.__pos_weight__ = torch.nn.Parameter(torch.tensor(pos_weight, dtype=torch.float), requires_grad=False)
         self.binary_cross_entropy_loss = torch.nn.BCEWithLogitsLoss(pos_weight=self.__pos_weight__, reduction='none')
-    
+
     def get_targets(self, dataframe: pd.DataFrame) -> np.ndarray:
         """Get target values of all samples from `dataframe` as np.array. `dataframe` is the content of the metadata
         file.
@@ -167,11 +168,11 @@ class BinaryTarget(Target):
         Returns
         ---------
         targets: np.ndarray
-            Target values of all samples from `dataframe` as np.ndarray of datatype `np.float` and shape 
+            Target values of all samples from `dataframe` as np.ndarray of datatype `float` and shape 
             `(n_samples, 1)`.
         """
-        return np.asarray(self.true_class_value[None] == dataframe[self.column_name].values[:, None], dtype=np.float)
-    
+        return np.asarray(self.true_class_value[None] == dataframe[self.column_name].values[:, None], dtype=float)
+
     def activation_function(self, raw_outputs: torch.Tensor) -> torch.Tensor:
         """Sigmoid activation function to apply to network outputs to create prediction
         
@@ -188,8 +189,8 @@ class BinaryTarget(Target):
             `(n_samples, 1)`.
         """
         return torch.sigmoid(raw_outputs)
-    
-    def loss_function(self, raw_outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+
+    def loss_function(self, raw_outputs: torch.Tensor, targets: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
         """`torch.nn.BCEWithLogitsLoss()` loss used for training on this task
         
         Parameters
@@ -206,9 +207,10 @@ class BinaryTarget(Target):
         loss: torch.Tensor
             Loss for this task as torch.Tensor of shape `(n_samples, 1)`.
         """
-        return self.binary_cross_entropy_loss(raw_outputs, targets)
-    
-    def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor) -> dict:
+        return binary_cross_entropy_with_logits(raw_outputs, targets, weight=weights, pos_weight=self.__pos_weight__,
+                                                reduction='none')
+
+    def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor, weights: torch.Tensor) -> dict:
         """Get scores for this task as dictionary containing AUC, BACC, F1, and loss
         
         Parameters
@@ -233,9 +235,9 @@ class BinaryTarget(Target):
         predictions_thresholded = predictions_thresholded[..., 0]
         roc_auc = metrics.roc_auc_score(y_true=labels, y_score=predictions, average=None)
         bacc = metrics.balanced_accuracy_score(y_true=labels, y_pred=predictions_thresholded)
-        f1 = metrics.f1_score(y_true=labels, y_pred=predictions_thresholded, average='binary',
-                              pos_label=1)
-        loss = self.loss_function(raw_outputs=raw_outputs, targets=targets).detach().mean().cpu().item()
+        f1 = metrics.f1_score(y_true=labels, y_pred=predictions_thresholded, average='binary', pos_label=1)
+        loss = self.loss_function(raw_outputs=raw_outputs, targets=targets,
+                                  weights=weights).detach().mean().cpu().item()
         return dict(roc_auc=roc_auc, bacc=bacc, f1=f1, loss=loss)
 
 
@@ -273,10 +275,10 @@ class MulticlassTarget(Target):
         self.column_name = column_name
         self.possible_target_values = np.array(possible_target_values)
         if class_weights is None:
-            class_weights = np.ones(shape=(len(self.possible_target_values),), dtype=np.float)
+            class_weights = np.ones(shape=(len(self.possible_target_values),), dtype=float)
         self.__class_weights__ = torch.nn.Parameter(torch.tensor(class_weights, dtype=torch.float), requires_grad=False)
         self.cross_entropy_loss = torch.nn.CrossEntropyLoss(weight=self.__class_weights__, reduction='none')
-    
+
     def get_targets(self, dataframe: pd.DataFrame) -> np.ndarray:
         """Get target values of all samples from `dataframe` as np.array. `dataframe` is the content of the metadata
         file.
@@ -289,12 +291,12 @@ class MulticlassTarget(Target):
         Returns
         ---------
         targets: np.ndarray
-            Target values of all samples from `dataframe` as np.ndarray of datatype `np.float` and shape
+            Target values of all samples from `dataframe` as np.ndarray of datatype `float` and shape
             `(n_samples, len(self.possible_target_values))`.
         """
         return np.asarray(self.possible_target_values[None, :] == dataframe[self.column_name].values[:, None],
-                          dtype=np.float)
-    
+                          dtype=float)
+
     def activation_function(self, raw_outputs: torch.Tensor) -> torch.Tensor:
         """Softmax activation function to apply to network outputs to create prediction
         
@@ -311,7 +313,7 @@ class MulticlassTarget(Target):
              `(n_samples, len(self.possible_target_values))`.
         """
         return torch.softmax(raw_outputs, dim=-1)
-    
+
     def loss_function(self, raw_outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """`torch.nn.CrossEntropyLoss()` loss used for training on this task
         
@@ -365,7 +367,7 @@ class RegressionTarget(Target):
         self.normalization_mean = normalization_mean
         self.normalization_std = normalization_std
         self.mse_loss = torch.nn.MSELoss(reduction='none')
-    
+
     def get_targets(self, dataframe: pd.DataFrame) -> np.ndarray:
         """Get target values of all samples from `dataframe` as np.array. `dataframe` is the content of the metadata
         file.
@@ -378,12 +380,12 @@ class RegressionTarget(Target):
         Returns
         ---------
         targets: np.ndarray
-            Target values of all samples from `dataframe` as np.ndarray of datatype `np.float` and shape
+            Target values of all samples from `dataframe` as np.ndarray of datatype `float` and shape
             `(n_samples, 1)`.
         """
-        return (np.array(dataframe[self.column_name].values[:, None], dtype=np.float)
+        return (np.array(dataframe[self.column_name].values[:, None], dtype=float)
                 - self.normalization_mean) / self.normalization_std
-    
+
     def activation_function(self, raw_outputs: torch.Tensor) -> torch.Tensor:
         """Linear activation function to apply to network outputs to create prediction (does not affect loss function!)
         
@@ -400,7 +402,7 @@ class RegressionTarget(Target):
             `(n_samples, 1)`.
         """
         return raw_outputs
-    
+
     def loss_function(self, raw_outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """`torch.nn.MSELoss()` loss used for training on this task (using raw outputs before activation function!)
         
@@ -445,7 +447,7 @@ class RegressionTarget(Target):
         predictions_denorm = predictions * self.normalization_std + self.normalization_mean
         targets = targets.float().cpu().numpy()
         targets_denorm = targets * self.normalization_std + self.normalization_mean
-        
+
         # Compute scores
         r2 = metrics.r2_score(targets_denorm, predictions_denorm)
         mae = metrics.mean_absolute_error(targets_denorm, predictions_denorm)
@@ -480,7 +482,7 @@ class TaskDefinition(torch.nn.Module):
         cumsum_n_output_features = [0] + list(np.cumsum(self.__n_output_features__))
         self.__targets_slices__ = [slice(start, stop) for start, stop in zip(cumsum_n_output_features[:-1],
                                                                              cumsum_n_output_features[1:])]
-    
+
     def get_targets(self, dataframe: pd.DataFrame) -> np.ndarray:
         """Get target values of all samples from `dataframe` as np.array for all `deeprc.task_definitions.Target`
          instances. `dataframe` is the content of the metadata file.
@@ -493,12 +495,12 @@ class TaskDefinition(torch.nn.Module):
         Returns
         ---------
         targets: np.ndarray
-            Target values of all samples from `dataframe` as np.ndarray of datatype `np.float` and shape
+            Target values of all samples from `dataframe` as np.ndarray of datatype `float` and shape
             `(n_samples, n_target_features)`.
         """
-        return np.concatenate([np.asarray(t.get_targets(dataframe), dtype=np.float32)
+        return np.concatenate([np.asarray(t.get_targets(dataframe), dtype=float)
                                for t in self.__targets__], axis=-1)
-    
+
     def activation_function(self, raw_outputs: torch.Tensor) -> torch.Tensor:
         """Returns network output after activation functions for all `deeprc.task_definitions.Target` instances.
         
@@ -514,8 +516,8 @@ class TaskDefinition(torch.nn.Module):
         """
         return torch.cat([a(raw_outputs[..., s])
                           for s, a in zip(self.__targets_slices__, self.__activation_functions__)], dim=-1)
-    
-    def get_losses(self, raw_outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+
+    def get_losses(self, raw_outputs: torch.Tensor, targets: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
         """Get individual losses for all `deeprc.task_definitions.Target` instances.
         
         Parameters
@@ -533,12 +535,13 @@ class TaskDefinition(torch.nn.Module):
             Loss for all `deeprc.task_definitions.Target` instances as torch.Tensor of shape
             `(n_samples, n_target_instances)`.
         """
-        losses = torch.stack([l(raw_outputs[..., s], targets[..., s]) * w
+        losses = torch.stack([l(raw_outputs[..., s], targets[..., s], weights[..., s]) * w
                               for s, l, w in zip(self.__targets_slices__, self.__loss_functions__,
                                                  self.__task_weights__)])
         return losses
-    
-    def get_loss(self, raw_outputs: torch.Tensor, targets: torch.Tensor, ignore_missing_target_values: bool = True)\
+
+    def get_loss(self, raw_outputs: torch.Tensor, targets: torch.Tensor, weights: torch.Tensor,
+                 ignore_missing_target_values: bool = True) \
             -> torch.Tensor:
         """Get combined loss of all `deeprc.task_definitions.Target` instances.
         
@@ -564,7 +567,7 @@ class TaskDefinition(torch.nn.Module):
             The combined loss is computed as weighted sum of the individual task losses times their respective
             tasks-weights.
         """
-        losses_per_target_per_sample = self.get_losses(raw_outputs, targets)  # shape: (n_tasks, n_samples, 1)
+        losses_per_target_per_sample = self.get_losses(raw_outputs, targets, weights)  # shape: (n_tasks, n_samples, 1)
         if ignore_missing_target_values:
             # Reduce sample dimension and omit NaNs from missing target entries
             loss_per_target = [losses_per_sample[~torch.isnan(losses_per_sample)].mean()
@@ -576,21 +579,21 @@ class TaskDefinition(torch.nn.Module):
             # Mean over samples, sum over tasks
             loss = losses_per_target_per_sample.mean(dim=1).sum()
         return loss
-    
+
     def get_task_ids(self) -> tuple:
         """Get IDs for all `deeprc.task_definitions.Target` instances."""
         return self.__target_ids__
-    
+
     def get_task_weights(self) -> np.ndarray:
         """Get task weights for all `deeprc.task_definitions.Target` instances. The combined loss is computed as
          weighted sum of the individual task losses times their respective tasks-weights."""
         return self.__task_weights__
-    
+
     def get_n_output_features(self) -> int:
         """Get number of output features required for all `deeprc.task_definitions.Target` instances. This will be
         the number of output features used for the DeepRC network."""
         return self.__total_output_features__
-    
+
     def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor) -> dict:
         """Get scores for this task as dictionary
         

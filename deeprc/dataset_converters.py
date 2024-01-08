@@ -121,11 +121,11 @@ class DatasetToHDF5(object):
         """Filter repertoire sequences based on exclusion and inclusion criteria and valid sequence characters"""
         if len(self.exclude_rows) or len(self.include_rows):
             if len(self.include_rows):
-                rows_mask = np.zeros_like(repertoire_data[self.sequence_column].values, dtype=np.bool)
+                rows_mask = np.zeros_like(repertoire_data[self.sequence_column].values, dtype=bool)
                 for incl_col, incl_val in self.include_rows:
                     rows_mask = np.logical_or(rows_mask, repertoire_data[incl_col].values == incl_val)
             else:
-                rows_mask = np.ones_like(repertoire_data[self.sequence_column].values, dtype=np.bool)
+                rows_mask = np.ones_like(repertoire_data[self.sequence_column].values, dtype=bool)
             for excl_col, excl_val in self.exclude_rows:
                 rows_mask = np.logical_and(rows_mask, repertoire_data[excl_col].values != excl_val)
             repertoire_data = repertoire_data[rows_mask]
@@ -147,14 +147,14 @@ class DatasetToHDF5(object):
             
             # Get sequence counts
             if self.sequence_counts_column is None:
-                counts_per_sequence = np.ones_like(repertoire_data[self.sequence_column].values, dtype=np.int)
+                counts_per_sequence = np.ones_like(repertoire_data[self.sequence_column].values, dtype=int)
             else:
                 try:
-                    counts_per_sequence = np.asarray(repertoire_data[self.sequence_counts_column].values, dtype=np.int)
+                    counts_per_sequence = np.asarray(repertoire_data[self.sequence_counts_column].values, dtype=int)
                 except ValueError:
                     counts_per_sequence = repertoire_data[self.sequence_counts_column].values
                     counts_per_sequence[counts_per_sequence == 'null'] = 0
-                    counts_per_sequence = np.asarray(counts_per_sequence, dtype=np.int)
+                    counts_per_sequence = np.asarray(counts_per_sequence, dtype=int)
                 
                 # Set sequence counts < 1 to 1
                 if counts_per_sequence.min() < 1:
@@ -162,7 +162,7 @@ class DatasetToHDF5(object):
                     sys.stdout.flush()
                     counts_per_sequence[counts_per_sequence < 0] = 1
             
-            seq_lens = np.array([len(sequence) for sequence in repertoire_data[self.sequence_column]], dtype=np.int)
+            seq_lens = np.array([len(sequence) for sequence in repertoire_data[self.sequence_column]], dtype=int)
             n_sequences = len(repertoire_data)
             
             # Calculate sequence length stats
@@ -189,7 +189,7 @@ class DatasetToHDF5(object):
             max_seq_len = seq_lens.max()
             
             # Convert AA strings to numpy int8 array (padded with -1)
-            amino_acid_sequences = np.full(shape=(len(sequences_str), max_seq_len), dtype=np.int8, fill_value=-1)
+            amino_acid_sequences = np.full(shape=(len(sequences_str), max_seq_len), dtype=int8, fill_value=-1)
             for i, sequence_str in enumerate(sequences_str):
                 amino_acid_sequences[i, :seq_lens[i]] = [self.aa_ind_dict[aa] for aa in sequence_str]
         except Exception as e:
@@ -230,11 +230,11 @@ class DatasetToHDF5(object):
              n_sequences_per_sample) = zip(*samples_infos)
             counts_per_sequence = np.concatenate(counts_per_sequence, axis=0)
             seq_lens = np.concatenate(seq_lens, axis=0)
-            sample_min_seq_len = np.asarray(min_seq_len, dtype=np.int)
-            sample_max_seq_len = np.asarray(max_seq_len, dtype=np.int)
-            sample_avg_seq_len = np.asarray(avg_seq_len, dtype=np.float)
-            n_sequences_per_sample = np.asarray(n_sequences_per_sample, dtype=np.int)
-            sample_sequences_start_end = np.empty(shape=(*n_sequences_per_sample.shape, 2), dtype=np.int)
+            sample_min_seq_len = np.asarray(min_seq_len, dtype=int)
+            sample_max_seq_len = np.asarray(max_seq_len, dtype=int)
+            sample_avg_seq_len = np.asarray(avg_seq_len, dtype=float)
+            n_sequences_per_sample = np.asarray(n_sequences_per_sample, dtype=int)
+            sample_sequences_start_end = np.empty(shape=(*n_sequences_per_sample.shape, 2), dtype=int)
             sample_sequences_start_end[:, 1] = np.cumsum(n_sequences_per_sample)
             sample_sequences_start_end[1:, 0] = sample_sequences_start_end[:-1, 1]
             sample_sequences_start_end[0, 0] = 0
@@ -242,7 +242,7 @@ class DatasetToHDF5(object):
             
             # Get AA sequences and store in one pre-allocated numpy int8 array (padding with -1)
             amino_acid_sequences = np.full(shape=(n_sequences_per_sample.sum(), sample_max_seq_len.max()),
-                                           dtype=np.int8, fill_value=-1)
+                                           dtype=int8, fill_value=-1)
             
             with multiprocessing.Pool(processes=n_workers) as pool:
                 if large_repertoires:
@@ -265,7 +265,7 @@ class DatasetToHDF5(object):
             group.create_dataset('sample_avg_seq_len', data=sample_avg_seq_len, **self.h5py_dict)
             group.create_dataset('n_sequences_per_sample', data=n_sequences_per_sample, **self.h5py_dict)
             group.create_dataset('sequence_counts', data=counts_per_sequence, **self.h5py_dict)
-            group.create_dataset('sequences', data=amino_acid_sequences, dtype=np.int8, **self.h5py_dict)
+            group.create_dataset('sequences', data=amino_acid_sequences, dtype=int8, **self.h5py_dict)
             metadata_group = hf.create_group('metadata')
             metadata_group.create_dataset('sample_keys', data=np.array(self.sample_keys, dtype=object),
                                           dtype=h5py.special_dtype(vlen=str), **self.h5py_dict)

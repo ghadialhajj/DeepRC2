@@ -14,12 +14,12 @@ import torch.jit as jit
 from typing import List
 
 
-def compute_position_features(max_seq_len, sequence_lengths, dtype=np.float16):
+def compute_position_features(max_seq_len, sequence_lengths, dtype=float16):
     """Compute position features for sequences of lengths `sequence_lengths`, given the maximum sequence length
     `max_seq_len`.
     """
     sequences = np.zeros((max_seq_len+1, max_seq_len, 3), dtype=dtype)
-    half_sequence_lengths = np.asarray(np.ceil(sequence_lengths / 2.), dtype=np.int)
+    half_sequence_lengths = np.asarray(np.ceil(sequence_lengths / 2.), dtype=int)
     for i in range(len(sequences)):
         sequence, seq_len, half_seq_len = sequences[i], sequence_lengths[i], half_sequence_lengths[i]
         sequence[:seq_len, -1] = np.abs(0.5 - np.linspace(1.0, 0, num=seq_len)) * 2.
