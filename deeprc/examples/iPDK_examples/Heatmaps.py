@@ -33,10 +33,11 @@ root_dir = "/storage/ghadia/DeepRC2/deeprc"
 # root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
 hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': None, 'FE': "factor_as_attention", 'TE': 'lambda',
-                    'Vanilla': None}
+                    'Vanilla': 'l2_lambda'}
 hyperparams_values = {'factor_as_attention': {0: 20, 1: 20, 2: 20, 3: 20, 4: 100},
                       'mul_att_by_factor': {0: 100, 1: 20, 2: 500, 3: 20, 4: 500},
-                      'lambda': {0: 1, 1: 0.1, 2: 1, 3: 0.1, 4: 0.1}}
+                      'l2_lambda': {0: 0, 1: 0, 2: 0.0001, 3: 0.0001, 4: 0.00001},
+                      'seq_loss_lambda': {0: 1, 1: 0.1, 2: 1, 3: 0.1, 4: 0.1}}
 
 config = {"sequence_reduction_fraction": 0.1,
           "reduction_mb_size": int(5e3),
