@@ -32,9 +32,9 @@ device = torch.device(device_name)
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
 # root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
-hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': None, 'FE': "factor_as_attention", 'TE': 'lambda',
+hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': None, 'FE': "factor_as_attention", 'TE': 'seq_loss_lambda',
                     'Vanilla': 'l2_lambda'}
-hyperparams_values = {'factor_as_attention': {0: 20, 1: 20, 2: 20, 3: 20, 4: 100},
+hyperparams_values = {'factor_as_attention': {0: 100, 1: 20, 2: 20, 3: 20, 4: 20},
                       'mul_att_by_factor': {0: 100, 1: 20, 2: 500, 3: 20, 4: 500},
                       'l2_lambda': {0: 0, 1: 0, 2: 0.0001, 3: 0.0001, 4: 0.00001},
                       'seq_loss_lambda': {0: 1, 1: 0.1, 2: 1, 3: 0.1, 4: 0.1}}
@@ -98,6 +98,7 @@ hyperparams_val = hyperparams_values[hyperparam_name][fold]
 config['fold'] = fold
 
 for id in range(len(all_labels_columns)):
+    print("id", id)
     used_sequence_labels_column = all_labels_columns[id]
     config['id'] = id
     config['used_sequence_labels_column'] = used_sequence_labels_column
@@ -119,7 +120,7 @@ for id in range(len(all_labels_columns)):
         config.update({'with_seq_loss': True})
     elif config['strategy'] == "AP":
         config.update({"average_pooling": True})
-    logger = Logger(dataloaders=dl_dict, strategy=config['strategy'])
+    logger = Logger(dataloaders=dl_dict, root_dir=root_dir, strategy=config['strategy'])
 
     config[hyperparam_name] = hyperparams_val
 
