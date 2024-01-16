@@ -34,17 +34,22 @@ root_dir = "/storage/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
 hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': None, 'FE': "factor_as_attention", 'TE': 'seq_loss_lambda',
                     'Vanilla': 'l2_lambda'}
-hyperparams_values = {'factor_as_attention': {0: 100, 1: 20, 2: 20, 3: 20, 4: 20},
-                      'mul_att_by_factor': {0: 100, 1: 20, 2: 500, 3: 20, 4: 500},
-                      'l2_lambda': {0: 0, 1: 0, 2: 0.0001, 3: 0.0001, 4: 0.00001},
-                      'seq_loss_lambda': {0: 1, 1: 0.1, 2: 1, 3: 0.1, 4: 0.1}}
+# hyperparams_values_25 = {'factor_as_attention': {0: 100, 1: 20, 2: 20, 3: 20, 4: 20},
+#                       'mul_att_by_factor': {0: 100, 1: 20, 2: 500, 3: 20, 4: 500},
+#                       'l2_lambda': {0: 0, 1: 0, 2: 0.0001, 3: 0.0001, 4: 0.00001},
+#                       'seq_loss_lambda': {0: 1, 1: 0.1, 2: 1, 3: 0.1, 4: 0.1}}
+
+hyperparams_values_50 = {'factor_as_attention': {0: 20, 1: 20, 2: 20, 3: 20, 4: 20},
+                         'l2_lambda': {0: 0, 1: 0.0001, 2: 0.0001, 3: 0.0001, 4: 0},
+                         'mul_att_by_factor': {0: 500, 1: 500, 2: 500, 3: 500, 4: 500},
+                         'seq_loss_lambda': {0: 1, 1: 1, 2: 1, 3: 1, 4: 1}}
 
 config = {"sequence_reduction_fraction": 0.1,
           "reduction_mb_size": int(5e3),
           'strategy': args.strategy,  # ['FAE', 'TE', 'FE'],
           'evaluate_at': int(2e2),
           "timestamp": datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'),
-          "dataset": f"HIV/v6/phenotype_burden_25",
+          "dataset": f"HIV/v6/phenotype_burden_50",
           "Branch": "HIV",
           'kernel_size': 9,
           'n_kernels': 32,
@@ -94,7 +99,7 @@ hdf5_file, n_repertoires = create_hdf5_file(
 fold = args.fold
 seed = seeds[fold]
 hyperparam_name = hyperparam_names[config['strategy']]
-hyperparams_val = hyperparams_values[hyperparam_name][fold]
+hyperparams_val = hyperparams_values_50[hyperparam_name][fold]
 config['fold'] = fold
 
 for id in range(len(all_labels_columns)):
