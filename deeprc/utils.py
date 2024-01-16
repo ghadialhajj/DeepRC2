@@ -76,9 +76,10 @@ def url_get(url: str, dst: str, verbose: bool = True):
 
 
 class Logger():
-    def __init__(self, dataloaders, strategy=""):
+    def __init__(self, dataloaders, root_dir, strategy=""):
         self.dataloaders = dataloaders
         self.strategy = strategy
+        self.root_dir = root_dir
 
     def log_motifs(self, params: np.ndarray, step):
         cnn_weights = params[:, :20, :].squeeze()
@@ -131,19 +132,31 @@ class Logger():
 
     def plot_histogram(self, data: dict, n_bins: int = 50, dl_name: str = "", plot_title: str = "",
                        xaxis_title: str = "Attention value", step: int = 0, save_data: bool = False):
+        # fig = make_subplots()
+        #
+        # min = np.min([np.min(class_data) for class_data in data.values() if class_data.size > 0])
+        # max = np.max([np.max(class_data) for class_data in data.values() if class_data.size > 0])
+        # bins = np.linspace(min, max, n_bins)
+        #
+        # pdfs = {class_name: np.histogram(class_data, bins=bins, density=True)[0] for
+        #         class_name, class_data in data.items()}
+        #
+        # pmfs = {class_name: pdfs[class_name] / np.sum(pdfs[class_name]) * 100 for class_name in pdfs}
+        #
+        # for name, hist in pmfs.items():
+        #     fig.add_trace(go.Scatter(x=bins, y=hist, mode='lines', name=name))
+
         fig = make_subplots()
+        config = dict(opacity=0.6, histnorm="percent", nbinsx=n_bins)
 
-        min = np.min([np.min(class_data) for class_data in data.values() if class_data.size > 0])
-        max = np.max([np.max(class_data) for class_data in data.values() if class_data.size > 0])
-        bins = np.linspace(min, max, n_bins)
+        for name, values in data.items():
+            fig.add_trace(go.Histogram(x=values, **config, name=name))
+        # Set y-axes titles
+        fig.update_yaxes(title_text="Postives")
+        fig.update_yaxes(title_text="Negatives")
 
-        pdfs = {class_name: np.histogram(class_data, bins=bins, density=True)[0] for
-                class_name, class_data in data.items()}
-
-        pmfs = {class_name: pdfs[class_name] / np.sum(pdfs[class_name]) * 100 for class_name in pdfs}
-
-        for name, hist in pmfs.items():
-            fig.add_trace(go.Scatter(x=bins, y=hist, mode='lines', name=name))
+        fig.update_layout(title=plot_title, xaxis_title=xaxis_title, yaxis_title="Percentage", barmode='overlay')
+        fig.update_traces(autobinx=False, selector=dict(type='histogram'))
 
         fig.update_layout(
             title='Histogram of Classes',
@@ -154,12 +167,16 @@ class Logger():
 
         if save_data:
             # create folders if they don't exist first and save the figure
-            root_dir = "/storage/ghadia/DeepRC2/deeprc/results/Attentions"
-            os.makedirs(f"{root_dir}/PNG/{self.strategy}", exist_ok=True)
-            os.makedirs(f"{root_dir}/JSON/{self.strategy}", exist_ok=True)
+            save_dir = f"{self.root_dir}/results/Attentions"
+            json_dir = f"{save_dir}/JSON/{self.strategy}"
+            png_dir = f"{save_dir}/PNG/{self.strategy}"
+            if not os.path.isdir(json_dir):
+                os.makedirs(json_dir, exist_ok=True)
+            if not os.path.isdir(png_dir):
+                os.makedirs(png_dir, exist_ok=True)
 
-            fig.write_image(f"{root_dir}/PNG/{self.strategy}/{wandb.run.name}.png")
-            fig.write_json(f"{root_dir}/JSON/{self.strategy}/{wandb.run.name}.json")
+            fig.write_image(f"{save_dir}/PNG/{self.strategy}/{wandb.run.name}.png")
+            fig.write_json(f"{save_dir}/JSON/{self.strategy}/{wandb.run.name}.json")
 
         # Log the plot
         wandb.log({f"{xaxis_title}/{dl_name}": fig}, step=step)
@@ -356,7 +373,7 @@ def plot_motifs(motif_matrix, num_aas: int = 3, kernel_size: int = 5):
 
 def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, task_definition: TaskDefinition,
              logger: [Logger, None], step: [int, None], show_progress: bool = True,
-             device: torch.device = torch.device('cuda:1'), log_stats=True, dl_name="validationset_eval",
+             device: torch.device = torch.device('cuda:1'), log_stats=True, dl_name="val_set_eval",
              ) -> Tuple[dict, dict]:
     """Compute DeepRC model scores on given dataset for tasks specified in `task_definition`
 
@@ -399,7 +416,7 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
                                                               sequence_counts=all_seq_counts,
                                                               n_sequences=all_n_sequences)
 
-        if log_stats and dl_name in ["validationset_eval", "testset_eval"]:
+        if log_stats and dl_name in ["val_eval_dl", "test_eval_dl"]:
             logger.log_stats(step, all_logits, all_targets, all_emb_reps, all_attentions, all_pools,
                              att_hists=True, log_per_kernel=False, logit_hist=False,
                              dl_name=dl_name)
@@ -413,7 +430,7 @@ def eval_on_test(task_definition, best_model, test_eval_dl, logger, device, n_up
     scores, sequence_scores = evaluate(model=best_model, dataloader=test_eval_dl,
                                        task_definition=task_definition, step=n_updates,
                                        device=device, logger=logger, log_stats=True,
-                                       dl_name="testset_eval")
+                                       dl_name="test_eval_dl")
     curves = sequence_scores['sequence_class'].pop('curves')
     wandb.run.summary.update(scores["label_positive"])
     wandb.run.summary.update(sequence_scores["sequence_class"])
