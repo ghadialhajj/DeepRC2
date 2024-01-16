@@ -8,6 +8,7 @@ Contact -- widrich@ml.jku.at
 import os
 from itertools import chain
 
+import matplotlib
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -315,4 +316,5 @@ def log_scores(device, early_stopping_target_id, logger, model, task_definition,
                            f"{group}{task_id}/ranAP_{classes_dict[id]}": curve.prevalence_pos_label}, step=update)
 
     model.training_mode = True
+    matplotlib.pyplot.close()
     return scores, scoring_loss
