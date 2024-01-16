@@ -9,12 +9,13 @@ color_ids = {"LW": 0, "LW̅": 1, "HW̅": 2, "HW": 3}
 
 
 class Subplot_from_raw():
-    def __init__(self, n_bins=400):
+    def __init__(self, n_bins=400, factor=1):
         self.allowed_models = ['Vanilla', 'FAE', 'TE']
         self.ranks = ['Best', 'Worst']
         self.trace_names = ['HW', 'LW', 'LW̅', 'HW̅']
         self.json_dir = "/storage/ghadia/DeepRC2/deeprc/results/Attentions/JSON"
         self.n_bins = n_bins
+        self.factor = factor
 
     def check_json(self, data: dict):
         assert all([key_model in self.allowed_models for key_model in data.keys()])
@@ -27,8 +28,8 @@ class Subplot_from_raw():
              for val_trace in val_rank.values()])
 
     def plotting(self, data):
-        bins = np.linspace(self.x_min, self.x_max, self.n_bins)
-        min_y, max_y = self.get_y_range(data)
+        x_min, x_max, y_min, y_max = self.get_all_hists_range(data)
+        # bins = np.linspace(x_min, x_max, self.n_bins)
 
         # Create a 3x2 subplot grid
         rows, cols = 2, len(data.keys())
@@ -43,7 +44,8 @@ class Subplot_from_raw():
                 index = i * cols + j
                 for trace in self.trace_names:
                     fig.add_trace(
-                        go.Scatter(x=bins, y=data[model_name][rank_name][trace],
+                        go.Scatter(x=data[model_name][rank_name]["bins"][trace],
+                                   y=data[model_name][rank_name]["hists"][trace],
                                    mode='lines',
                                    name=trace,
                                    line=dict(width=2, color=colors[trace]),
@@ -52,12 +54,12 @@ class Subplot_from_raw():
                     )
 
                     # Show x-axis ticks only for the bottom-most row
-                    fig.update_xaxes(showticklabels=i == rows - 1, row=i + 1, col=j + 1, range=[self.x_min, self.x_max])
+                    fig.update_xaxes(showticklabels=i == rows - 1, row=i + 1, col=j + 1, range=[x_min, x_max])
                     # Show y-axis ticks only for the leftmost column
                     fig.update_yaxes(showticklabels=j == 0, row=i + 1, col=j + 1, secondary_y=False,
-                                     range=[min_y, max_y], title_text=rank_name if j == 0 else None)
+                                     range=[y_min, y_max], title_text=rank_name if j == 0 else None)
             # Update layout and show the combined figure
-            fig.update_layout(height=800, width=800, showlegend=True)
+            fig.update_layout(height=500, width=800, showlegend=True)
             fig.update_layout({
                 'plot_bgcolor': 'rgba(0, 0, 0, 0)',  # Set background color (here, it's set to transparent)
             })
@@ -96,8 +98,6 @@ class Subplot_from_raw():
         return all_json_data
 
     def make_histograms(self, all_json_data: dict):
-        self.x_min, self.x_max = self.get_x_range(all_json_data)
-        bins = np.linspace(self.x_min, self.x_max, self.n_bins)
         model_names = all_json_data.keys()
 
         all_hists = {model_name: {run_name: {} for run_name in all_json_data[model_name]} for model_name in
@@ -105,21 +105,39 @@ class Subplot_from_raw():
 
         for model_name, json_data in all_json_data.items():
             for run_name, run_data in json_data.items():
-                pdf = {class_name: np.histogram(class_data, bins=bins, density=True)[0] for
-                       class_name, class_data in run_data.items()}
+                pdf = {}
+                bins = {}
+                for class_name, class_data in run_data.items():
+                    n_bins = self.n_bins * self.factor if (
+                                model_name == "Vanilla" and run_name == "Worst") else self.n_bins
+                    hist, r_bins = np.histogram(class_data, bins=n_bins, density=True)
+                    pdf[class_name] = hist
+                    bins[class_name] = r_bins
                 pmf = {class_name: pdf[class_name] / np.sum(pdf[class_name]) * 100 for class_name in pdf}
-                all_hists[model_name][run_name] = pmf
+                all_hists[model_name][run_name]["hists"] = pmf
+                all_hists[model_name][run_name]["bins"] = bins
 
         return all_hists
 
-    def get_x_range(self, all_json_data):
-        min = np.min(
-            [np.min(class_data) for model_name, json_data in all_json_data.items() for run_data in
-             json_data.values() for class_name, class_data in run_data.items()])
-        max = np.max(
-            [np.max(class_data) for model_name, json_data in all_json_data.items() for run_data in
-             json_data.values() for class_name, class_data in run_data.items()])
+    def get_x_range(self, run_data):
+        min = np.min([np.min(class_data) for class_name, class_data in run_data.items()])
+        max = np.max([np.max(class_data) for class_name, class_data in run_data.items()])
         return min, max
+
+    def get_all_hists_range(self, all_hists):
+        x_min = np.min([np.min([np.min([np.min(all_hists[model_name][run_name]["bins"][trace]) for trace in
+                                        self.trace_names]) for run_name in all_hists[model_name]]) for model_name in
+                        all_hists])
+        x_max = np.max([np.max([np.max([np.max(all_hists[model_name][run_name]["bins"][trace]) for trace in
+                                        self.trace_names]) for run_name in all_hists[model_name]]) for model_name in
+                        all_hists])
+        y_min = np.min([np.min([np.min([np.min(all_hists[model_name][run_name]["hists"][trace]) for trace in
+                                        self.trace_names]) for run_name in all_hists[model_name]]) for model_name in
+                        all_hists])
+        y_max = np.max([np.max([np.max([np.max(all_hists[model_name][run_name]["hists"][trace]) for trace in
+                                        self.trace_names]) for run_name in all_hists[model_name]]) for model_name in
+                        all_hists])
+        return x_min, x_max, y_min, y_max
 
     def get_y_range(self, data):
         min_y = np.min([np.min([np.min([np.min(data[model_name][run_name][trace]) for trace in self.trace_names]) for
@@ -135,6 +153,6 @@ class Subplot_from_raw():
 
 
 if __name__ == '__main__':
-    subplot = Subplot_from_raw(200)
+    subplot = Subplot_from_raw(n_bins=50, factor=3)
     subplot.main()
     print()
