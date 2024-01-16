@@ -115,7 +115,7 @@ for fold in range(len(folds)):
         n_repertoires=n_repertoires, )
 
     dl_dict = {"train_eval_dl": train_eval_dl, "val_eval_dl": val_eval_dl, "test_eval_dl": test_eval_dl}
-    logger = Logger(dataloaders=dl_dict, strategy=config['strategy'])
+    logger = Logger(dataloaders=dl_dict, root_dir=root_dir, strategy=config['strategy'])
     best_loss = +np.inf
     best_model = None
     best_HP = None
