@@ -133,7 +133,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
         #
         log_scores(device, early_stopping_target_id, logger,
                    model, task_definition, tprint, trainingset_eval_dataloader,
-                   update, validationset_eval_dataloader, testset_eval_dataloader)
+                   update, validationset_eval_dataloader)
         try:
             tprint("Training model...")
             update_progess_bar = tqdm(total=n_updates, disable=not show_progress, position=0,
@@ -219,8 +219,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                         # if update in [10, 100, 1000, 5000, 10000, 15000, 20000] or update == n_updates:
                         scores, scoring_loss = log_scores(device, early_stopping_target_id, logger,
                                                           model, task_definition, tprint, trainingset_eval_dataloader,
-                                                          update, validationset_eval_dataloader,
-                                                          testset_eval_dataloader, track_test=track_test)
+                                                          update, validationset_eval_dataloader)
 
                         # If we have a new best loss on the validation set, we save the model as new best model
                         if best_validation_loss > scoring_loss:
@@ -252,8 +251,7 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
 
 
 def log_scores(device, early_stopping_target_id, logger, model, task_definition, tprint,
-               trainingset_eval_dataloader, update, validationset_eval_dataloader, testset_eval_dataloader,
-               track_test=False):
+               trainingset_eval_dataloader, update, validationset_eval_dataloader):
     classes_dict = task_definition.__sequence_targets__[0].classes_dict
     model.training_mode = False
     print("  Calculating training score...")
@@ -295,25 +293,6 @@ def log_scores(device, early_stopping_target_id, logger, model, task_definition,
             wandb.log({f"{group}{task_id}/PRC_{classes_dict[id]}": wandb.Image(curve.figure_),
                        f"{group}{task_id}/AP_{classes_dict[id]}": curve.average_precision,
                        f"{group}{task_id}/ranAP_{classes_dict[id]}": curve.prevalence_pos_label}, step=update)
-
-    if track_test:
-        print("  Calculating test score...")
-        scores, sequence_scores = evaluate(model=model, dataloader=testset_eval_dataloader,
-                                           task_definition=task_definition, device=device, logger=None, step=None,
-                                           log_stats=False)
-        tprint(f"[test] u: {update:07d}; scores: {scores};")
-        group = 'test/'
-        for task_id, task_scores in scores.items():
-            [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
-             for score_name, score in task_scores.items()]
-        curves = sequence_scores['sequence_class'].pop('curves')
-        for task_id, task_scores in sequence_scores.items():
-            [wandb.log({f"{group}{task_id}/{score_name}": score}, step=update)
-             for score_name, score in task_scores.items()]
-            for id, curve in curves.items():
-                wandb.log({f"{group}{task_id}/PRC_{classes_dict[id]}": wandb.Image(curve.figure_),
-                           f"{group}{task_id}/AP_{classes_dict[id]}": curve.average_precision,
-                           f"{group}{task_id}/ranAP_{classes_dict[id]}": curve.prevalence_pos_label}, step=update)
 
     model.training_mode = True
     matplotlib.pyplot.close()
