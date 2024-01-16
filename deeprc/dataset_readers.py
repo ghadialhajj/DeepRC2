@@ -87,12 +87,12 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, hdf5_f
                      split_inds: list = None, n_splits: int = 5, cross_validation_fold: int = 0, rnd_seed: int = 0,
                      n_worker_processes: int = 4, batch_size: int = 4,
                      inputformat: str = 'NCL', keep_dataset_in_ram: bool = True,
-                     sample_n_sequences: int = 10000,
+                     sample_n_sequences: int = 10000, true_class_value: str = 'True',
                      metadata_file_id_column: str = 'ID', metadata_file_column_sep: str = '\t',
-                     used_sequence_labels_column: str = 'is_signal',
-                     all_sets: bool = True, sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
+                     used_sequence_labels_column: str = 'is_signal', max_n_training_samples: int = 360,
+                     sequence_counts_scaling_fn: Callable = no_sequence_count_scaling,
                      verbose: bool = True, force_pos_in_subsampling=False, min_count: int = 1,
-                     n_training_samples: int = 360) \
+                     n_training_samples: int = 360, column_name='label_positive') \
         -> Tuple[DataLoader, DataLoader, DataLoader, DataLoader]:
     """Get data loaders for a dataset
     
@@ -217,47 +217,62 @@ def make_dataloaders(task_definition: TaskDefinition, metadata_file: str, hdf5_f
                          f"exist in `split_inds`.")
 
     testset_inds = split_inds.pop(cross_validation_fold)
-    validationset_inds = split_inds.pop(cross_validation_fold - 1)[:int(n_training_samples / 3)]
-    trainingset_inds = np.concatenate(split_inds)[:n_training_samples]
+    validationset_inds = split_inds.pop(cross_validation_fold - 1)
+    trainingset_inds = np.concatenate(split_inds)
+    if n_training_samples < max_n_training_samples:
+        inds = first_n_indices(validationset_inds, metadata_file, column_name,
+                               metadata_file_column_sep, true_class_value, int(n_training_samples / 3))
+        validationset_inds = validationset_inds[inds]
+        inds = first_n_indices(trainingset_inds, metadata_file, column_name,
+                               metadata_file_column_sep, true_class_value, n_training_samples)
+        trainingset_inds = trainingset_inds[inds]
 
     if verbose:
         print("Creating dataloaders for dataset splits")
 
-    trainingset_dataloader, trainingset_eval_dataloader, validationset_eval_dataloader, testset_eval_dataloader = (
-            [None] * 4)
     #
     # Create datasets and dataloaders for splits
     #
     if verbose:
         print("Creating dataloaders for dataset splits")
 
-    if not all_sets:
-        trainingset_inds = [0, 1]
-
     training_dataset = RepertoireDatasetSubset(
         dataset=full_dataset, indices=trainingset_inds, sample_n_sequences=sample_n_sequences)
     trainingset_dataloader = DataLoader(
         training_dataset, batch_size=batch_size, shuffle=True, num_workers=n_worker_processes,
         collate_fn=no_stack_collate_fn)
-    if all_sets:
-        training_eval_dataset = RepertoireDatasetSubset(
-            dataset=full_dataset, indices=trainingset_inds, sample_n_sequences=None)
-        trainingset_eval_dataloader = DataLoader(
-            training_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
+    training_eval_dataset = RepertoireDatasetSubset(
+        dataset=full_dataset, indices=trainingset_inds, sample_n_sequences=None)
+    trainingset_eval_dataloader = DataLoader(
+        training_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
 
-        validationset_eval_dataset = RepertoireDatasetSubset(
-            dataset=full_dataset, indices=validationset_inds, sample_n_sequences=None)
-        validationset_eval_dataloader = DataLoader(
-            validationset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
-        testset_eval_dataset = RepertoireDatasetSubset(
-            dataset=full_dataset, indices=testset_inds, sample_n_sequences=None)
-        testset_eval_dataloader = DataLoader(
-            testset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
+    validationset_eval_dataset = RepertoireDatasetSubset(
+        dataset=full_dataset, indices=validationset_inds, sample_n_sequences=None)
+    validationset_eval_dataloader = DataLoader(
+        validationset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
+    testset_eval_dataset = RepertoireDatasetSubset(
+        dataset=full_dataset, indices=testset_inds, sample_n_sequences=None)
+    testset_eval_dataloader = DataLoader(
+        testset_eval_dataset, batch_size=1, shuffle=False, num_workers=1, collate_fn=no_stack_collate_fn)
 
     if verbose:
         print("\tDone!")
 
     return trainingset_dataloader, trainingset_eval_dataloader, validationset_eval_dataloader, testset_eval_dataloader
+
+
+def first_n_indices(indices, metadata_file, column_name, metadata_sep, true_class, n):
+    indices = list(indices)
+    classes = pd.read_csv(metadata_file, sep=metadata_sep, dtype=str)[column_name].values[indices]
+    classes = [classes[i] == true_class for i in range(len(classes))]
+    data = list(zip(indices, classes))
+
+    positive_indices = [indices.index(index) for index, label in data if label == 1]
+    negative_indices = [indices.index(index) for index, label in data if label == 0]
+
+    selected_indices = (negative_indices[:int(n / 2)] + positive_indices[:int(n / 2)])
+
+    return selected_indices
 
 
 def create_hdf5_file(repertoiresdata_path: str, filename_extension: str = '.tsv', h5py_dict: dict = None,

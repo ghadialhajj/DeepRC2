@@ -17,7 +17,7 @@ import argparse
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--fold', help='Fold index. Default: 0',
-                    type=int, default=0)
+                    type=int, default=3)
 parser.add_argument('--strategy', help='Name of the strategy. Default: int(1e3)',
                     type=str, default='FAE')
 parser.add_argument('--n_updates', help='Name of the strategy. Default: int(1e3)',
@@ -114,10 +114,13 @@ for n_training_samples in [180, 96, 48, 12]:
         force_pos_in_subsampling=config['fps'],
         hdf5_file=hdf5_file,
         n_repertoires=n_repertoires,
-        n_training_samples=n_training_samples, )
+        n_training_samples=n_training_samples,
+        column_name=task_definition.__repertoire_targets__[0].column_name,
+        true_class_value=task_definition.__repertoire_targets__[0].true_class_value,
+    )
 
     dl_dict = {"train_eval_dl": train_eval_dl, "val_eval_dl": val_eval_dl, "test_eval_dl": test_eval_dl}
-    logger = Logger(dataloaders=dl_dict, strategy=config['strategy'])
+    logger = Logger(dataloaders=dl_dict, strategy=config['strategy'], root_dir=root_dir, experiment="Table2")
 
     hyperparam_val = hyperparams_values[fold]
     config[hyperparam_name] = hyperparam_val
