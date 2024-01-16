@@ -76,10 +76,11 @@ def url_get(url: str, dst: str, verbose: bool = True):
 
 
 class Logger():
-    def __init__(self, dataloaders, root_dir, strategy=""):
+    def __init__(self, dataloaders, root_dir, strategy="", experiment: str = None):
         self.dataloaders = dataloaders
         self.strategy = strategy
-        self.root_dir = root_dir
+        self.root_dir = root_dir,
+        self.experiment = experiment
 
     def log_motifs(self, params: np.ndarray, step):
         cnn_weights = params[:, :20, :].squeeze()
@@ -167,7 +168,7 @@ class Logger():
 
         if save_data:
             # create folders if they don't exist first and save the figure
-            save_dir = f"{self.root_dir}/results/Attentions"
+            save_dir = f"{self.root_dir}/results/{self.experiment}/Attentions"
             json_dir = f"{save_dir}/JSON/{self.strategy}"
             png_dir = f"{save_dir}/PNG/{self.strategy}"
             if not os.path.isdir(json_dir):
@@ -175,8 +176,8 @@ class Logger():
             if not os.path.isdir(png_dir):
                 os.makedirs(png_dir, exist_ok=True)
 
-            fig.write_image(f"{save_dir}/PNG/{self.strategy}/{wandb.run.name}.png")
-            fig.write_json(f"{save_dir}/JSON/{self.strategy}/{wandb.run.name}.json")
+            fig.write_image(f"{png_dir}/{wandb.run.name}.png")
+            fig.write_json(f"{json_dir}/{wandb.run.name}.json")
 
         # Log the plot
         wandb.log({f"{xaxis_title}/{dl_name}": fig}, step=step)
