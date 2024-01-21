@@ -19,9 +19,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--n_witnesses', help='Name of the strategy. Default: int(1e3)',
                     type=int, default=50)
 parser.add_argument('--hp_name', help='Name of the HP. Default: int(1e3)',
-                    type=str, default="n_heads")
+                    type=str, default="beta")
 parser.add_argument('--n_updates', help='Name of the strategy. Default: int(1e3)',
-                    type=int, default=int(1e5))
+                    type=int, default=int(1e1))
 parser.add_argument('--device', help='GPU ID. Default: 0',
                     type=int, default=0)
 args = parser.parse_args()
@@ -31,18 +31,16 @@ device = torch.device(device_name)
 
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
 # root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
-base_results_dir = "/results/singletask_cnn/ideal"
+base_results_dir = "/results/vanilla_hpo"
 
-HPs = {"n_heads": [1, 16, 64],
-       "beta": [0.1, 1.0, 10.0],
-       "l2_penalty": [1.0, 0.1, 0.01],
+HPs = {"beta": [0.1, 1.0, 10.0],
+       "l2_lambda": [1.0, 0.1, 0.01],
        "n_kernels": [8, 32, 128],
        "kernel_size": [5, 7, 9]}
 
 config = {"sequence_reduction_fraction": 0.1,
-          "n_heads": 16,
           "beta": 1.0,
-          "l2_penalty": 0.1,
+          "l2_lambda": 0.1,
           "n_kernels": 32,
           "kernel_size": 7,
           "reduction_mb_size": int(5e3),
@@ -60,7 +58,6 @@ config = {"sequence_reduction_fraction": 0.1,
           "mul_att_by_factor": False,
           "factor_as_attention": None,
           "average_pooling": False,
-          "l2_lambda": 0,
           "seq_loss_lambda": 0,
           "device": device,
           'fpa': False,
@@ -68,7 +65,8 @@ config = {"sequence_reduction_fraction": 0.1,
 
 config.update(vars(args))
 
-results_dir = os.path.join(f"{base_results_dir}_{config['dataset']}", config["timestamp"])
+results_dir = os.path.join(f"{base_results_dir}",
+                           f"beta_{config['beta']}_l2_lambda_{config['l2_lambda']}_n_kernels_{config['n_kernels']}_kernel_size_{config['kernel_size']}")
 
 all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is_signal_TPR_5%_FDR_50%',
                       'is_signal_TPR_5%_FDR_80%', 'is_signal_TPR_10%_FDR_0%',
@@ -125,7 +123,7 @@ for hp_index in [0, 2]:
     print(f"HP: {args.hp_name}, value: {config[args.hp_name]}")
     np.random.seed(seed)
     run = wandb.init(project="HIV - VanillaHPO", group=f"{config['strategy']}", reinit=True, config=config, )
-    run.name = f"results_idx_{str(fold)}"
+    run.name = f"results_idx_{str(fold)}_{str(hp_index)}"
     # Create sequence embedding network (for CNN, kernel_size and n_kernels are important hyper-parameters)
     sequence_embedding_network = SequenceEmbeddingCNN(n_input_features=20 + 3, kernel_size=config['kernel_size'],
                                                       n_kernels=config['n_kernels'], n_layers=1)
@@ -139,7 +137,7 @@ for hp_index in [0, 2]:
                    attention_network=attention_network, output_network=output_network, training_mode=True,
                    consider_seq_counts=False, n_input_features=20, force_pos_in_attention=config['fpa'],
                    sequence_reduction_fraction=config["sequence_reduction_fraction"],
-                   reduction_mb_size=config["reduction_mb_size"], device=device,
+                   reduction_mb_size=config["reduction_mb_size"], device=device, beta=config["beta"],
                    mul_att_by_factor=config["mul_att_by_factor"], average_pooling=config["average_pooling"],
                    factor_as_attention=config["factor_as_attention"]).to(device=device)
 
@@ -154,7 +152,5 @@ for hp_index in [0, 2]:
     if val_loss < best_loss:
         best_model = copy.deepcopy(model)
         best_loss = val_loss
-        best_HP = hyperparams_val
 
-# wandb.run.summary.update({"best_val_loss": best_loss})
-# wandb.run.summary.update({"best_HP_val": best_HP})
+wandb.run.summary.update({"best_val_loss": best_loss})

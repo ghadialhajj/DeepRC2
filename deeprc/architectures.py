@@ -268,7 +268,7 @@ class DeepRC(nn.Module):
                  sequence_reduction_fraction: float = 0.1, reduction_mb_size: int = 5e4,
                  device: torch.device = torch.device('cuda:0'),
                  force_pos_in_attention=True, training_mode: bool = True,
-                 mul_att_by_factor: int = 1,
+                 mul_att_by_factor: int = 1, beta: float = 1,
                  factor_as_attention=0, average_pooling=False):
         """DeepRC network as described in paper
         
@@ -323,6 +323,7 @@ class DeepRC(nn.Module):
         self.mul_att_by_factor = mul_att_by_factor
         self.average_pooling = average_pooling
         self.factor_as_attention = factor_as_attention
+        self.beta = beta
 
         # sequence embedding network (h())
         if sequence_embedding_as_16_bit:
@@ -465,7 +466,7 @@ class DeepRC(nn.Module):
             # Get attention weights for single bag (shape: (n_sequences_per_bag, 1))
             emb_seqs = mb_emb_seqs[start_i:start_i + n_seqs]
             # Calculate attention activations (softmax over n_sequences_per_bag) (shape: (n_sequences_per_bag, 1))
-            attention_weights = torch.softmax(attention_weights, dim=0)
+            attention_weights = torch.softmax(attention_weights / self.beta, dim=0)
             if self.mul_att_by_factor:
                 attention_weights = attention_weights * (sequence_labels[start_i:start_i + n_seqs] * (
                         self.mul_att_by_factor - 1) + 1).unsqueeze(1)
