@@ -76,10 +76,10 @@ def url_get(url: str, dst: str, verbose: bool = True):
 
 
 class Logger():
-    def __init__(self, dataloaders, root_dir, strategy="", experiment: str = None):
+    def __init__(self, dataloaders, root_dir: str, strategy="", experiment: str = None):
         self.dataloaders = dataloaders
         self.strategy = strategy
-        self.root_dir = root_dir,
+        self.root_dir = root_dir
         self.experiment = experiment
 
     def log_motifs(self, params: np.ndarray, step):

@@ -132,7 +132,7 @@ for id in range(len(all_labels_columns)):
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    run = wandb.init(project="HIV - HM", group=config['strategy'], reinit=True, config=config)
+    run = wandb.init(project="HIV - HM0.2", group=config['strategy'], reinit=True, config=config)
     run.name = f"results_idx_{str(fold)}"
 
     # Create sequence embedding network (for CNN, kernel_size and n_kernels are important hyper-parameters)
