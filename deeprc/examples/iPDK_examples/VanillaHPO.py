@@ -10,7 +10,7 @@ from deeprc.architectures import DeepRC, SequenceEmbeddingCNN, AttentionNetwork,
 from deeprc.task_definitions import TaskDefinition, BinaryTarget, Sequence_Target
 from deeprc.training import train, evaluate
 import torch
-from deeprc.utils import Logger, eval_on_test
+from deeprc.utils import Logger, eval_on_test, get_hpo_combinations
 
 import argparse
 
@@ -18,10 +18,12 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--n_witnesses', help='Name of the strategy. Default: int(1e3)',
                     type=int, default=50)
+parser.add_argument('--fold', help='Fold. Default: int(1e3)',
+                    type=int, default=0)
 parser.add_argument('--hp_name', help='Name of the HP. Default: int(1e3)',
                     type=str, default="beta")
 parser.add_argument('--n_updates', help='Name of the strategy. Default: int(1e3)',
-                    type=int, default=int(1e1))
+                    type=int, default=int(1e5))
 parser.add_argument('--device', help='GPU ID. Default: 0',
                     type=int, default=0)
 args = parser.parse_args()
@@ -37,6 +39,8 @@ HPs = {"beta": [0.1, 1.0, 10.0],
        "l2_lambda": [1.0, 0.1, 0.01],
        "n_kernels": [8, 32, 128],
        "kernel_size": [5, 7, 9]}
+
+HP_combinations = get_hpo_combinations(HPs)
 
 config = {"sequence_reduction_fraction": 0.1,
           "beta": 1.0,
@@ -65,7 +69,7 @@ config = {"sequence_reduction_fraction": 0.1,
 
 config.update(vars(args))
 
-results_dir = os.path.join(f"{base_results_dir}",
+results_dir = os.path.join(f"{base_results_dir}", str(args.fold),
                            f"beta_{config['beta']}_l2_lambda_{config['l2_lambda']}_n_kernels_{config['n_kernels']}_kernel_size_{config['kernel_size']}")
 
 all_labels_columns = ['is_signal_TPR_5%_FDR_0%', 'is_signal_TPR_5%_FDR_10%', 'is_signal_TPR_5%_FDR_50%',
@@ -95,7 +99,7 @@ hdf5_file, n_repertoires = create_hdf5_file(
     sequence_counts_column=None,
     sequence_labels_columns=all_labels_columns)
 
-fold = 0
+fold = args.fold
 seed = seeds[fold]
 config['fold'] = fold
 train_dl, train_eval_dl, val_eval_dl, test_eval_dl = make_dataloaders(
@@ -117,13 +121,14 @@ best_loss = +np.inf
 best_model = None
 best_HP = None
 
-hp_set = HPs[args.hp_name]
-for hp_index in [0, 2]:
-    config[args.hp_name] = hp_set[hp_index]
-    print(f"HP: {args.hp_name}, value: {config[args.hp_name]}")
+for hp_dict in HP_combinations:
+    config.update(hp_dict)
+    for hp_name, hp_value in hp_dict.items():
+        print(f"{hp_name}: {hp_value}")
+
     np.random.seed(seed)
     run = wandb.init(project="HIV - VanillaHPO", group=f"{config['strategy']}", reinit=True, config=config, )
-    run.name = f"results_idx_{str(fold)}_{str(hp_index)}"
+    run.name = f"results_idx_{str(fold)}"
     # Create sequence embedding network (for CNN, kernel_size and n_kernels are important hyper-parameters)
     sequence_embedding_network = SequenceEmbeddingCNN(n_input_features=20 + 3, kernel_size=config['kernel_size'],
                                                       n_kernels=config['n_kernels'], n_layers=1)
@@ -152,5 +157,9 @@ for hp_index in [0, 2]:
     if val_loss < best_loss:
         best_model = copy.deepcopy(model)
         best_loss = val_loss
+        best_HP = hp_dict
 
 wandb.run.summary.update({"best_val_loss": best_loss})
+wandb.log(best_HP)
+
+eval_on_test(task_definition, best_model, test_eval_dl, logger, device, config['n_updates'])

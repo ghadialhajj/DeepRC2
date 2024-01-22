@@ -401,6 +401,26 @@ def eval_on_test(task_definition, best_model, test_eval_dl, logger, device, n_up
                                   f"ranAP_{classes_dict[id]}": curve.prevalence_pos_label})
 
 
+def get_hpo_combinations(HPs: dict, default_idx: int = 1):
+    # Get the default values (middle values in each list)
+    defaults = {key: values[default_idx] for key, values in HPs.items()}
+
+    # Initialize an empty list to store the combinations
+    combinations = []
+
+    # Iterate through each key in the dictionary
+    for key in HPs.keys():
+        # Create combinations where the first and third values are chosen for the current key
+        for value in [HPs[key][0], HPs[key][2]]:
+            current_combination = {k: value if k == key else defaults[k] for k in HPs.keys()}
+            combinations.append(current_combination)
+            # Create combinations where the third value is chosen for all keys
+    all_default_values = {key: values[default_idx] for key, values in HPs.items()}
+    combinations.append(all_default_values)
+
+    return combinations
+
+
 if __name__ == '__main__':
     run = wandb.init(project="Test", reinit=True)  # , tags=config["tag"])
     cnn_weights = np.random.randn(4, 23, 5)
