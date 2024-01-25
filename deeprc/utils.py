@@ -76,11 +76,12 @@ def url_get(url: str, dst: str, verbose: bool = True):
 
 
 class Logger():
-    def __init__(self, dataloaders, root_dir: str, strategy="", experiment: str = None):
+    def __init__(self, dataloaders, root_dir: str, strategy="", experiment: str = None, att_hists: bool = False):
         self.dataloaders = dataloaders
         self.strategy = strategy
         self.root_dir = root_dir
-        self.experiment = experiment
+        self.experiment = experiment  # find a better name for this
+        self.att_hists = att_hists
 
     def log_motifs(self, params: np.ndarray, step):
         cnn_weights = params[:, :20, :].squeeze()
@@ -92,7 +93,7 @@ class Logger():
             plt.close(fig)
 
     def log_stats(self, step: int, all_logits, all_targets, all_emb_reps, all_attentions, all_pools,
-                  att_hists: bool = False, log_per_kernel: bool = False, logit_hist: bool = False,
+                  log_per_kernel: bool = False, logit_hist: bool = False,
                   dl_name: str = "val_eval_dl"):
         """
         Logs model statistics including repertoire embeddings, logits, and attentions for each dataloader.
@@ -104,7 +105,7 @@ class Logger():
                                                                                 all_attentions, all_pools)
         split_rep_embs_pca = perform_pca(split_rep_embs)
         self.log_repertoire_rep(dl_name, split_rep_embs_pca, step)
-        if att_hists:
+        if self.att_hists:
             self.log_attention(dl_name, split_attentions, step, save_data=dl_name == "test_eval_dl")
         if logit_hist:
             self.log_logits(dl_name, split_logits, step)
@@ -168,7 +169,7 @@ class Logger():
 
         if save_data:
             # create folders if they don't exist first and save the figure
-            save_dir = f"{self.root_dir}/results/{self.experiment}/Attentions"
+            save_dir = f"{self.root_dir}/results/Attentions/{self.experiment}"
             json_dir = f"{save_dir}/JSON/{self.strategy}"
             png_dir = f"{save_dir}/PNG/{self.strategy}"
             if not os.path.isdir(json_dir):
@@ -377,9 +378,8 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
                                                               n_sequences=all_n_sequences)
 
         if log_stats and dl_name in ["val_eval_dl", "test_eval_dl"]:
-            logger.log_stats(step, all_logits, all_targets, all_emb_reps, all_attentions, all_pools,
-                             att_hists=True, log_per_kernel=False, logit_hist=False,
-                             dl_name=dl_name)
+            logger.log_stats(step, all_logits, all_targets, all_emb_reps, all_attentions, all_pools, dl_name=dl_name,
+                             log_per_kernel=False, logit_hist=False)
 
         return scores, sequence_scores
 

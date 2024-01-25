@@ -17,11 +17,11 @@ import argparse
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--strategy', help='Name of the strategy. Default: int(1e3)',
-                    type=str, default='FAE')
+                    type=str, default='TE')
 parser.add_argument('--n_witnesses', help='Name of the strategy. Default: int(1e3)',
-                    type=int, default=500)
+                    type=int, default=50)
 parser.add_argument('--n_updates', help='Name of the strategy. Default: int(1e3)',
-                    type=int, default=int(3e4))
+                    type=int, default=int(3e3))
 parser.add_argument('--device', help='GPU ID. Default: 0',
                     type=int, default=0)
 args = parser.parse_args()
@@ -32,10 +32,11 @@ device = torch.device(device_name)
 root_dir = "/storage/ghadia/DeepRC2/deeprc"
 # root_dir = "/itf-fi-ml/home/ghadia/DeepRC2/deeprc"
 base_results_dir = "/results/singletask_cnn/ideal"
-hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': None, 'FE': "factor_as_attention", 'TE': 'seq_loss_lambda',
+hyperparam_names = {'FAE': "mul_att_by_factor", 'AP': 'None', 'FE': "factor_as_attention", 'TE': 'pos_weight',
                     'Vanilla': 'l2_lambda'}
 hyperparams_values = {'mul_att_by_factor': [20, 100, 500], 'factor_as_attention': [20, 100, 500],
-                      'l2_lambda': [0, 0.00001, 0.0001], 'seq_loss_lambda': [0.01, 0.1, 1.0]}
+                      'l2_lambda': [0, 0.00001, 0.0001], 'seq_loss_lambda': [0.01, 0.1, 1.0], "None": [None],
+                      "pos_weight": [100, 500, 1000]}
 
 config = {"sequence_reduction_fraction": 0.1,
           "reduction_mb_size": int(5e3),
@@ -56,7 +57,8 @@ config = {"sequence_reduction_fraction": 0.1,
           "factor_as_attention": None,
           "average_pooling": False,
           "l2_lambda": 0,
-          "seq_loss_lambda": 0,
+          "seq_loss_lambda": 1,
+          "pos_weight": 1,
           "device": device,
           'fpa': False,
           'fps': False}
@@ -90,7 +92,7 @@ hyperparam_name = hyperparam_names[config['strategy']]
 
 task_definition = TaskDefinition(targets=[  # Combines our sub-tasks
     BinaryTarget(column_name='label_positive', true_class_value='True'),
-    Sequence_Target(device=config["device"]), ])  # .to(device=config["device"])
+    Sequence_Target(device=config["device"], pos_weight=config["pos_weight"]),])  # .to(device=config["device"])
 
 hdf5_file, n_repertoires = create_hdf5_file(
     repertoiresdata_path=f"{root_dir}/datasets/{config['dataset']}/data/simulated_repertoires",
@@ -122,10 +124,12 @@ for fold in range(len(folds)):
 
     for hyperparams_val in hyperparams_values[hyperparam_name]:
         config[hyperparam_name] = hyperparams_val
+        task_definition.__sequence_targets__[0].pos_weight = hyperparams_val
+
         torch.manual_seed(seed)
         np.random.seed(seed)
 
-        run = wandb.init(project="HIV - Table1", group=f"{config['strategy']}", reinit=True, config=config, )
+        run = wandb.init(project="HIV - Table1long", group=f"{config['strategy']}", reinit=True, config=config, )
         run.name = f"results_idx_{str(fold)}"
         # Create sequence embedding network (for CNN, kernel_size and n_kernels are important hyper-parameters)
         sequence_embedding_network = SequenceEmbeddingCNN(n_input_features=20 + 3, kernel_size=config['kernel_size'],
