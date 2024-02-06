@@ -120,7 +120,7 @@ train_dl, train_eval_dl, val_eval_dl, test_eval_dl = make_dataloaders(
     n_repertoires=n_repertoires, )
 
 dl_dict = {"train_eval_dl": train_eval_dl, "val_eval_dl": val_eval_dl, "test_eval_dl": test_eval_dl}
-logger = Logger(dataloaders=dl_dict, root_dir=root_dir, strategy=config['strategy'])
+logger = Logger(dataloaders=dl_dict, root_dir=root_dir, strategy=config['strategy'], att_hists=True)
 best_loss = +np.inf
 best_model = None
 best_HP = None
@@ -132,7 +132,7 @@ for hyperparams_val in hyperparams_values[hyperparam_name]:
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    run = wandb.init(project="HIV - Table1long", group=f"{config['strategy']}", reinit=True, config=config, )
+    run = wandb.init(project="HIV - TEWrongHPO", group=f"{config['strategy']}", reinit=True, config=config, )
     run.name = f"results_idx_{str(fold)}"
     # Create sequence embedding network (for CNN, kernel_size and n_kernels are important hyper-parameters)
     sequence_embedding_network = SequenceEmbeddingCNN(n_input_features=20 + 3, kernel_size=config['kernel_size'],
