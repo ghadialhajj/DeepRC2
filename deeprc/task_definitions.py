@@ -594,7 +594,7 @@ class TaskDefinition(torch.nn.Module):
         the number of output features used for the DeepRC network."""
         return self.__total_output_features__
 
-    def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor) -> dict:
+    def get_scores(self, raw_outputs: torch.Tensor, targets: torch.Tensor, weights: torch.Tensor) -> dict:
         """Get scores for this task as dictionary
         
         Parameters
@@ -615,6 +615,7 @@ class TaskDefinition(torch.nn.Module):
             `deeprc.task_definitions.BinaryTarget()`).
             See `deeprc/examples/` for examples.
         """
-        scores = dict([(t.get_id(), t.get_scores(raw_outputs=raw_outputs[..., s], targets=targets[..., s]))
+        scores = dict([(t.get_id(),
+                        t.get_scores(raw_outputs=raw_outputs[..., s], targets=targets[..., s], weights=weights[..., s]))
                        for s, t in zip(self.__targets_slices__, self.__targets__)])
         return scores

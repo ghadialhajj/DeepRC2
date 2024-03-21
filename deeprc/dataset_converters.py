@@ -189,7 +189,7 @@ class DatasetToHDF5(object):
             max_seq_len = seq_lens.max()
             
             # Convert AA strings to numpy int8 array (padded with -1)
-            amino_acid_sequences = np.full(shape=(len(sequences_str), max_seq_len), dtype=int8, fill_value=-1)
+            amino_acid_sequences = np.full(shape=(len(sequences_str), max_seq_len), dtype=np.int8, fill_value=-1)
             for i, sequence_str in enumerate(sequences_str):
                 amino_acid_sequences[i, :seq_lens[i]] = [self.aa_ind_dict[aa] for aa in sequence_str]
         except Exception as e:
@@ -242,7 +242,7 @@ class DatasetToHDF5(object):
             
             # Get AA sequences and store in one pre-allocated numpy int8 array (padding with -1)
             amino_acid_sequences = np.full(shape=(n_sequences_per_sample.sum(), sample_max_seq_len.max()),
-                                           dtype=int8, fill_value=-1)
+                                           dtype=np.int8, fill_value=-1)
             
             with multiprocessing.Pool(processes=n_workers) as pool:
                 if large_repertoires:
@@ -265,7 +265,7 @@ class DatasetToHDF5(object):
             group.create_dataset('sample_avg_seq_len', data=sample_avg_seq_len, **self.h5py_dict)
             group.create_dataset('n_sequences_per_sample', data=n_sequences_per_sample, **self.h5py_dict)
             group.create_dataset('sequence_counts', data=counts_per_sequence, **self.h5py_dict)
-            group.create_dataset('sequences', data=amino_acid_sequences, dtype=int8, **self.h5py_dict)
+            group.create_dataset('sequences', data=amino_acid_sequences, dtype=np.int8, **self.h5py_dict)
             metadata_group = hf.create_group('metadata')
             metadata_group.create_dataset('sample_keys', data=np.array(self.sample_keys, dtype=object),
                                           dtype=h5py.special_dtype(vlen=str), **self.h5py_dict)
