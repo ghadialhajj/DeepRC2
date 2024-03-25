@@ -4,6 +4,8 @@ import json
 import multiprocessing
 import numpy as np
 import pickle
+
+import pandas as pd
 import sklearn.metrics as metrics
 import sys
 import time
@@ -198,7 +200,7 @@ class LogisticMILDataReader(data.Dataset):
 
             # Fetch auxiliary features.
             starts = data_file[r'sampledata'][r'kmer_sequences_start_end'][self.__indices]
-            ends = data_file[r'sampledata'][r'kmer_sequences_start_end'][(_ + 1 for _ in self.__indices)]
+            ends = data_file[r'sampledata'][r'kmer_sequences_start_end'][[_ + 1 for _ in self.__indices]]
             try:
                 relative_abundance_key = relative_abundance.name.lower()
             except AttributeError:
@@ -279,7 +281,7 @@ class LogisticMILDataReader(data.Dataset):
 
     @classmethod
     def adapt(cls, file_path: Path, store_path: Path, kmer_size: int = 4, num_workers: int = 0,
-              dtype: Type = np.float32) -> None:
+              dtype: Type = np.float32, meta_data_path: str = "") -> None:
         """
         Adapt data set to be compatible with logistic MIL.
 
@@ -297,8 +299,8 @@ class LogisticMILDataReader(data.Dataset):
         # Compute statistics of data set.
         abundance = [{} for _ in range(size)]
         abundance_max = [{} for _ in range(len(abundance))]
-        abundance_total = np.zeros((len(abundance),), dtype=np.long)
-        kmer_counts = np.zeros((len(abundance),), dtype=np.long)
+        abundance_total = np.zeros((len(abundance),), dtype=np.int64)
+        kmer_counts = np.zeros((len(abundance),), dtype=np.int64)
         progress_bar_1 = tqdm(desc=r'[1/3] Compute sample statistics', unit=r'sa', total=size, file=sys.stdout)
         progress_bar_2 = tqdm(desc=r'[2/3] Compute relative abundance', unit=r'sa', total=size, file=sys.stdout)
         progress_bar_3 = tqdm(desc=r'[3/3] Compute kmer-sequences', unit=r'sa', total=size, file=sys.stdout)
@@ -319,6 +321,8 @@ class LogisticMILDataReader(data.Dataset):
             with progress_lock:
                 progress_bar_1.update(1)
 
+        metadata = pd.read_csv(meta_data_path)
+        labels = metadata['label_positive']
         # Apply sample computations asynchronously.
         num_tasks = multiprocessing.cpu_count() if num_workers <= 0 else num_workers
         with multiprocessing.get_context(method=cls.spawn_method).Pool(
@@ -327,15 +331,15 @@ class LogisticMILDataReader(data.Dataset):
             # Compute sample statistics.
             sample_futures = []
             with h5py.File(file_path, r'r') as data_file:
-                if type(data_file['metadata'][r'labels']) == h5py.Group:
-                    labels = np.where(data_file['metadata'][r'labels'][r'Known CMV status'])[1]
-                else:
-                    labels = np.where(data_file['metadata'][r'labels'])[1]
+                # if type(data_file['metadata'][r'labels']) == h5py.Group:
+                #     labels = np.where(data_file['metadata'][r'labels'][r'Known CMV status'])[1]
+                # else:
+                #     labels = np.where(data_file['metadata'][r'labels'])[1]
                 for sample_index in range(size):
                     start, end = data_file[r'sampledata'][r'sample_sequences_start_end'][sample_index]
                     sequence_lengths = data_file[r'sampledata'][r'seq_lens'][start:end]
-                    sequence_counts = data_file[r'sampledata'][r'duplicates_per_sequence'][start:end]
-                    sequences = data_file[r'sampledata'][r'amino_acid_sequences'][start:end]
+                    sequence_counts = data_file[r'sampledata'][r'sequence_counts'][start:end]
+                    sequences = data_file[r'sampledata'][r'sequences'][start:end]
                     sample_futures.append(sample_pool.apply_async(
                         cls.sample_worker, (sample_index, sequence_lengths, sequence_counts, sequences, kmer_size),
                         callback=_sample_callback,
@@ -398,7 +402,7 @@ class LogisticMILDataReader(data.Dataset):
 
             # Write metadata (amount of samples as well as the target labels).
             data_file.require_dataset(
-                r'metadata/n_samples', shape=(1,), data=size, dtype=np.long)
+                r'metadata/n_samples', shape=(1,), data=size, dtype=np.int64)
             data_file.require_dataset(
                 r'metadata/labels', shape=labels.shape, data=labels, compression=cls.compression_algorithm,
                 shuffle=cls.compression_shuffle, compression_opts=cls.compression_level, dtype=labels.dtype)
@@ -460,9 +464,9 @@ class LogisticMILDataReader(data.Dataset):
             del relative_abundance_tcrb_stdv
             del keys
 
-        kmer_sequences_start_end = np.cumsum(np.asarray([0] + [_ for _ in kmer_counts]), dtype=np.long)
-        kmer_counts_total = np.sum(kmer_counts, dtype=np.long)
-        kmer_indices = np.zeros((kmer_counts_total,), dtype=np.long)
+        kmer_sequences_start_end = np.cumsum(np.asarray([0] + [_ for _ in kmer_counts]), dtype=np.int64)
+        kmer_counts_total = np.sum(kmer_counts, dtype=np.int64)
+        kmer_indices = np.zeros((kmer_counts_total,), dtype=np.int64)
         kmer_sequences = np.zeros((kmer_counts_total, Atchley().depth * kmer_size), dtype=dtype)
         sample_mean = np.zeros((size, kmer_sequences.shape[1]), dtype=dtype)
         sample_stdv = np.zeros((size, kmer_sequences.shape[1]), dtype=dtype)
@@ -495,7 +499,7 @@ class LogisticMILDataReader(data.Dataset):
                 for sample_index in range(size):
                     start, end = data_file[r'sampledata'][r'sample_sequences_start_end'][sample_index]
                     sequence_lengths = data_file[r'sampledata'][r'seq_lens'][start:end]
-                    sequences = data_file[r'sampledata'][r'amino_acid_sequences'][start:end]
+                    sequences = data_file[r'sampledata'][r'sequences'][start:end]
                     kmer_count = kmer_counts[sample_index]
                     sample_futures.append(sample_pool.apply_async(
                         cls.kmer_worker,
@@ -623,7 +627,7 @@ class LogisticMILDataReader(data.Dataset):
         atchley = Atchley()
         position = 0
         sample_kmer = np.zeros((kmer_count, atchley.depth * kmer_size), dtype=dtype)
-        sample_kmer_index = np.zeros((kmer_count,), dtype=np.long)
+        sample_kmer_index = np.zeros((kmer_count,), dtype=np.int64)
 
         # Compute relative abundance term for each <kmer> in the current sample.
         keys = [r'_'.join(map(str, _)) for _ in product(range(alphabet_size), repeat=kmer_size)]
@@ -717,7 +721,7 @@ class LogisticMIL(object):
             with h5py.File(file_path, r'r') as data_file:
                 num_repertoires = data_file[r'metadata'][r'n_samples'][()]
                 assert num_repertoires >= fold_info
-                indices = np.arange(num_repertoires, dtype=np.long)
+                indices = np.arange(num_repertoires, dtype=np.int64)
                 np.random.shuffle(indices)
                 indices = np.array_split(indices, indices_or_sections=fold_info, axis=0)
                 for fold_indices in indices:
@@ -885,7 +889,7 @@ class LogisticMIL(object):
                   normalise_mean: torch.Tensor = None, normalise_stdv: torch.Tensor = None,
                   top_n: int = 1, average_loss: bool = True,
                   collect_predictions: bool = False) -> Tuple[torch.Tensor, torch.Tensor,
-                                                              Tuple[torch.Tensor, torch.Tensor]]:
+    Tuple[torch.Tensor, torch.Tensor]]:
         """
         Evaluate logistic MIL module.
 
@@ -1291,7 +1295,7 @@ class LogisticMIL(object):
 
                 result_resorted = current_evaluation[2][0].cpu().numpy()
                 if not activations:
-                    result_resorted = result_resorted.round().astype(dtype=int32)
+                    result_resorted = result_resorted.round().astype(dtype=np.int32)
                 result = np.zeros_like(result_resorted)
                 result[self.__indices_test_resort] = result_resorted
                 result = list(result)
@@ -1328,3 +1332,47 @@ class LogisticMIL(object):
         return self.predict(logistic_mil_module=logistic_mil_module,
                             data_reader=self.__test_reader if self.__test_reader is not None else self.__data_reader[0],
                             normalise_mean=normalise_mean, normalise_stdv=normalise_stdv, activations=activations)
+
+
+if __name__ == '__main__':
+    # from pathlib import Path
+    #
+    # import numpy as np
+    n_witnesses = 250
+    # input_path = f"/storage/ghadia/DeepRC2/deeprc/datasets/HIV/v6/phenotype_burden_{n_witnesses}/data/simulated_repertoires.hdf5"
+    # metadata_path = f"/storage/ghadia/DeepRC2/deeprc/datasets/HIV/v6/phenotype_burden_{n_witnesses}/data/metadata.csv"
+    output_path = f"/storage/ghadia/DeepRC2/compared_methods/logistic_mil/simulated_repertoires_logreg_{n_witnesses}.hdf5"
+    # kmer_size = 4
+    #
+    # LogisticMILDataReader.adapt(file_path=Path(input_path), store_path=Path(output_path), kmer_size=kmer_size,
+    #                             num_workers=4, dtype=np.float16, meta_data_path=metadata_path)
+
+    import os
+
+    # Manually parse custom arguments.
+    batch_sizes = (1, 32)
+    top_n_samples = (1)
+    learning_rates = (0.1, 0.01)
+    betas_one = (0.9)
+    betas_two = (0.999)
+    weight_decays = (0.0)
+
+    # Create and optimise logistic MIL
+    logistic_mil = LogisticMIL(file_path=Path(output_path),
+                               relative_abundance=LogisticMILDataReader.RelativeAbundance("kmer"),
+                               fold_info=5,
+                               num_workers=0, device=r'cpu', dtype=torch.float32,
+                               test_mode=False, offset=0)
+    hyperparameters = logistic_mil.optimise(epochs=12, batch_sizes=batch_sizes, top_n=top_n_samples,
+                                            learning_rates=learning_rates, betas_one=betas_one, betas_two=betas_two,
+                                            weight_decays=weight_decays, amsgrad=True, epsilon=1e-8,
+                                            normalise=True, normalise_abundance=True,
+                                            randomise=True, repetitions=0, seed=42,
+                                            log_dir=None)
+
+    # Store best hyperparameters as obtained by grid search.
+    output_directory = os.path.dirname(f"settings_{n_witnesses}.json")
+    if (len(output_directory) > 0) and (not os.path.exists(output_directory)):
+        os.makedirs(output_directory)
+    with open(f"settings_{n_witnesses}.json", r'w') as hyperparameters_json:
+        json.dump(hyperparameters, hyperparameters_json)
