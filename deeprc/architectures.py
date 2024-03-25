@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.jit as jit
-from typing import List
+from typing import List, Optional
 
 
 # TODO: correct datatypes of added attributes
@@ -255,7 +255,7 @@ class OutputNetwork(nn.Module):
 
 
 class DeepRC(nn.Module):
-    def __init__(self, max_seq_len: int, n_input_features: int = 20,
+    def __init__(self, max_seq_len: int, n_input_features: int = 20, additive: bool = False, conjunctive: bool = False,
                  sequence_embedding_network: torch.nn.Module = SequenceEmbeddingCNN(
                      n_input_features=20 + 3, kernel_size=9, n_kernels=32, n_layers=1),
                  attention_network: torch.nn.Module = AttentionNetwork(
@@ -324,6 +324,8 @@ class DeepRC(nn.Module):
         self.average_pooling = average_pooling
         self.factor_as_attention = factor_as_attention
         self.beta = beta
+        self.additive = additive
+        self.conjunctive = conjunctive
 
         # sequence embedding network (h())
         if sequence_embedding_as_16_bit:
@@ -333,6 +335,10 @@ class DeepRC(nn.Module):
             self.embedding_dtype = torch.float
             self.sequence_embedding = sequence_embedding_network
 
+        if self.additive or self.conjunctive:
+            self.instance_clf = OutputNetwork(n_input_features=sequence_embedding_network.n_kernels,
+                                              n_output_features=1, n_layers=1,
+                                              n_units=attention_network.n_units)
         # Attention network (f())
         self.attention_nn = attention_network
 
@@ -474,16 +480,33 @@ class DeepRC(nn.Module):
                 attention_weights = (sequence_labels[start_i:start_i + n_seqs] * (
                         self.factor_as_attention - 1) + 1).unsqueeze(1)
             # Apply attention weights to sequence features (shape: (n_sequences_per_bag, d_v))
+            if self.additive:
+                instance_preds = self.instance_clf(emb_seqs * attention_weights)
+                instance_preds = torch.sigmoid(instance_preds)
+                early_pred = instance_preds.mean(dim=0)
+                mb_emb_reps_after_attention.append(early_pred)
+                continue
+            elif self.conjunctive:
+                instance_preds = self.instance_clf(emb_seqs)
+                instance_preds = torch.sigmoid(instance_preds)
+                early_pred = torch.mean(instance_preds * attention_weights, dim=0)
+                mb_emb_reps_after_attention.append(early_pred)
+                continue
             emb_reps_after_attention = emb_seqs * attention_weights
             # Compute weighted sum over sequence features after attention (format: (d_v,))
             mb_emb_reps_after_attention.append(emb_reps_after_attention.sum(dim=0))
             start_i += n_seqs
 
-        # Stack representations of bags (shape (N, d_v))
-        emb_reps_after_attention = torch.stack(mb_emb_reps_after_attention, dim=0)
+        if self.additive or self.conjunctive:
+            predictions = torch.stack(mb_emb_reps_after_attention, dim=0)
+            emb_reps_after_attention = None
 
-        # Calculate predictions (shape (N, n_outputs))
-        predictions = self.output_nn(emb_reps_after_attention)
+        else:
+            # Stack representations of bags (shape (N, d_v))
+            emb_reps_after_attention = torch.stack(mb_emb_reps_after_attention, dim=0)
+
+            # Calculate predictions (shape (N, n_outputs))
+            predictions = self.output_nn(emb_reps_after_attention)
 
         return predictions, mb_attention_weights, emb_reps_after_attention
 
