@@ -103,8 +103,9 @@ class Logger():
         #     continue
         split_logits, split_attentions, split_rep_embs = self.get_values_per_dl(all_logits, all_targets, all_emb_reps,
                                                                                 all_attentions, all_pools)
-        split_rep_embs_pca = perform_pca(split_rep_embs)
-        self.log_repertoire_rep(dl_name, split_rep_embs_pca, step)
+        if split_rep_embs is not None:
+            split_rep_embs_pca = perform_pca(split_rep_embs)
+            self.log_repertoire_rep(dl_name, split_rep_embs_pca, step)
         if self.att_hists:
             self.log_attention(dl_name, split_attentions, step, save_data=dl_name == "test_eval_dl")
         if logit_hist:
@@ -223,6 +224,7 @@ class Logger():
             return {"HW": HW, "LW̅": LW̅, "LW": LW, "HW̅": HW̅}
 
         else:
+            # todo fix for additive
             pos_vals = all_values[np.where(all_targets)[0]].detach().cpu().numpy()
             neg_vals = all_values[np.where(np.logical_not(all_targets))[0]].detach().cpu().numpy()
             if flatten:
@@ -389,7 +391,7 @@ def eval_on_test(task_definition, best_model, test_eval_dl, logger, device, n_up
     assert not best_model.training_mode, "Model is in training mode!"
     scores, sequence_scores = evaluate(model=best_model, dataloader=test_eval_dl,
                                        task_definition=task_definition, step=n_updates,
-                                       device=device, logger=logger, log_stats=True,
+                                       device=device, logger=logger, log_stats=False,
                                        dl_name="test_eval_dl")
     curves = sequence_scores['sequence_class'].pop('curves')
     wandb.run.summary.update(scores["label_positive"])

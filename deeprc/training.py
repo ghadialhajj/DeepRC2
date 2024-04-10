@@ -206,11 +206,11 @@ def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stoppin
                             cnn_weights = torch.norm(model.sequence_embedding.network[0].weight)
                             seq_grad = torch.norm(list(model.sequence_embedding.parameters())[0].grad).cpu().numpy()
                             att_grad = torch.norm(list(model.attention_nn.parameters())[0].grad).cpu().numpy()
-                            out_grad = torch.norm(list(model.output_nn.parameters())[0].grad).cpu().numpy()
+                            # out_grad = torch.norm(list(model.output_nn.parameters())[0].grad).cpu().numpy()
 
                             wandb.log({f"{group}sequence_embedding_grad_mean": seq_grad}, step=update)
                             wandb.log({f"{group}attention_nn_grad_mean": att_grad}, step=update)
-                            wandb.log({f"{group}output_nn_grad_mean": out_grad}, step=update)
+                            # wandb.log({f"{group}output_nn_grad_mean": out_grad}, step=update)
                             wandb.log({f"{group}cnn_weights": cnn_weights}, step=update)
                             wandb.log({f"{group}learning_rate": optimizer.param_groups[0]["lr"]}, step=update)
 
@@ -277,7 +277,7 @@ def log_scores(device, early_stopping_target_id, logger, model, task_definition,
     print("  Calculating validation score...")
     scores, sequence_scores = evaluate(model=model, dataloader=validationset_eval_dataloader,
                                        task_definition=task_definition, device=device, logger=logger, step=update,
-                                       log_stats=True)
+                                       log_stats=False)
     scoring_loss = scores[early_stopping_target_id]['loss']
 
     tprint(f"[validation] u: {update:07d}; scores: {scores};")
