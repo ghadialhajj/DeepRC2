@@ -12,7 +12,7 @@ import argparse
 import numpy as np
 import torch
 from deeprc.task_definitions import TaskDefinition, BinaryTarget
-from deeprc.dataset_readers import make_dataloaders, log_sequence_count_scaling
+from deeprc.dataset_readers import make_dataloaders, no_sequence_count_scaling
 from deeprc.architectures import DeepRC, SequenceEmbeddingCNN, AttentionNetwork, OutputNetwork
 from deeprc.training import train, evaluate
 import dill as pkl
@@ -23,11 +23,11 @@ from itertools import product
 #
 parser = argparse.ArgumentParser()
 parser.add_argument('--n_updates', help='Number of updates to train for. Recommended: int(1e5). Default: int(1e3)',
-                    type=int, default=int(2e5))
+                    type=int, default=int(3e5))
 parser.add_argument('--evaluate_at', help='Evaluate model on training and validation set every `evaluate_at` updates. '
                                           'This will also check for a new best model for early stopping. '
                                           'Recommended: int(5e3). Default: int(1e2).',
-                    type=int, default=int(1e3))
+                    type=int, default=int(5e3))
 parser.add_argument('--sample_n_sequences', help='Number of instances to reduce repertoires to during training via'
                                                  'random dropout. This should be less than the number of instances per '
                                                  'repertoire. Only applied during training, not for evaluation. '
@@ -67,7 +67,7 @@ HP_set = {
     'l1_l2': {(0, 0), (1e-5, 1e-3), (1e-4, 1e-2)},
 }
 combinations = product(*HP_set.values())
-results_directory = "/storage/ghadia/DeepRC2/results/T1D_nAC"
+results_directory = "/storage/ghadia/DeepRC2/results/T1D_AC_clip"
 
 with open('/storage/ghadia/DeepRC2/deeprc/datasets/T1D/used_t1d_ids.pkl', 'rb') as sfh:
     split_inds = pkl.load(sfh)
@@ -85,7 +85,7 @@ trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloade
     sequence_column='amino_acid',
     sequence_counts_column='templates',
     sample_n_sequences=args.sample_n_sequences,
-    sequence_counts_scaling_fn=log_sequence_count_scaling,
+    sequence_counts_scaling_fn=no_sequence_count_scaling,
     cross_validation_fold=args.fold,
     split_inds=split_inds,
     # Alternative: deeprc.dataset_readers.log_sequence_count_scaling
@@ -94,6 +94,7 @@ trainingset, trainingset_eval, validationset_eval, testset_eval = make_dataloade
 best_model = None
 best_config = None
 best_loss = float('inf')
+best_idx = None
 for idx, combo in enumerate(combinations):
     config = {key: value for key, value in zip(HP_set.keys(), combo)}
     # config = {'kernel_size': 9, 'n_kernels': 32, 'l1_l2': (1e-5, 1e-3)}
@@ -113,7 +114,7 @@ for idx, combo in enumerate(combinations):
     model = DeepRC(max_seq_len=30, sequence_embedding_network=sequence_embedding_network,
                    attention_network=attention_network,
                    output_network=output_network,
-                   consider_seq_counts=True, n_input_features=20, add_positional_information=True,
+                   consider_seq_counts=False, n_input_features=20, add_positional_information=True,
                    sequence_reduction_fraction=0.1, reduction_mb_size=int(5e4),
                    device=device).to(device=device)
 
@@ -136,6 +137,7 @@ for idx, combo in enumerate(combinations):
         best_loss = val_loss
         best_model = model
         best_config = config
+        best_idx = idx
         print(f"New best model with config: {best_config}")
 
     with open(f'{results_directory}/log_f{args.fold}.txt', 'a') as f:
@@ -145,3 +147,5 @@ for idx, combo in enumerate(combinations):
 #
 scores = evaluate(model=best_model, dataloader=testset_eval, task_definition=task_definition, device=device)
 print(f"Test scores:\n{scores}")
+with open(f'{results_directory}/log_f{args.fold}.txt', 'a') as f:
+    f.write(f"Test scores idx {best_idx}: {scores} with config: {best_config}\n")
