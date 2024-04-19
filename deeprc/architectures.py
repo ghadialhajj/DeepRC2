@@ -14,7 +14,7 @@ import torch.jit as jit
 from typing import List
 
 
-def compute_position_features(max_seq_len, sequence_lengths, dtype=float16):
+def compute_position_features(max_seq_len, sequence_lengths, dtype=np.float16):
     """Compute position features for sequences of lengths `sequence_lengths`, given the maximum sequence length
     `max_seq_len`.
     """
@@ -66,7 +66,7 @@ class SequenceEmbeddingCNN(nn.Module):
         
         self.network = torch.nn.Sequential(*network)
     
-    def forward(self, inputs, *args, **kwargs):
+    def forward(self, inputs, sequence_lengths, *args, **kwargs):
         """Apply sequence embedding CNN to inputs in NLC format.
         
         Parameters
@@ -79,6 +79,13 @@ class SequenceEmbeddingCNN(nn.Module):
         max_conv_acts: torch.Tensor
             Sequences embedded to tensor of shape (n_sequences, n_kernels)
         """
+        with torch.no_grad():
+            inputs[:, :4] = 0
+            sequence_lengths = sequence_lengths.long()
+            indices = torch.arange(inputs.shape[0])
+            for i in range(4):
+                inputs[indices, sequence_lengths - 1 - i, :] = 0
+
         inputs = torch.transpose(inputs, 1, 2)  # NLC -> NCL
         # Apply CNN
         conv_acts = self.network(inputs)
