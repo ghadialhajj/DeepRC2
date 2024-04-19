@@ -485,7 +485,7 @@ class RepertoireDataset(Dataset):
             Sample ID.
         """
         target_features = self.target_features[idx]
-        sample_weight = 1 # np.float32(self.sample_weights[idx])
+        sample_weight = np.float32(self.sample_weights[idx])
         sample_id = str(self.sample_keys[idx])
         if sample_n_sequences is None:
             sample_n_sequences = self.sample_n_sequences
