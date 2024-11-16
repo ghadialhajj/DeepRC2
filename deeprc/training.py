@@ -45,11 +45,12 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
         all_raw_outputs = []
         all_targets = []
         all_weights = []
+        all_sample_ids = []
 
         for scoring_data in tqdm(dataloader, total=len(dataloader), desc="Evaluating model", disable=not show_progress):
             # Get samples as lists
             targets, inputs, sequence_lengths, counts_per_sequence, sample_ids, weights = scoring_data
-            weights = torch.tensor(weights, dtype=torch.float32, device=device)
+            # weights = torch.tensor(weights, dtype=torch.float32, device=device)
 
             # Apply attention-based sequence reduction and create minibatch
             targets, inputs, sequence_lengths, n_sequences = model.reduce_and_stack_minibatch(
@@ -62,15 +63,16 @@ def evaluate(model: torch.nn.Module, dataloader: torch.utils.data.DataLoader, ta
             # Store predictions and labels
             all_raw_outputs.append(raw_outputs.detach())
             all_targets.append(targets.detach())
-            all_weights.append(weights.detach())
+            # all_weights.append(weights.detach())
+            all_sample_ids.extend(sample_ids)
 
         # Compute scores
         all_raw_outputs = torch.cat(all_raw_outputs, dim=0)
         all_targets = torch.cat(all_targets, dim=0)
-        all_weights = torch.cat(all_weights, dim=0).reshape(-1, 1)
+        # all_weights = torch.cat(all_weights, dim=0).reshape(-1, 1)
 
-        scores = task_definition.get_scores(raw_outputs=all_raw_outputs, targets=all_targets, weights=all_weights)
-    return scores
+        # scores = task_definition.get_scores(raw_outputs=all_raw_outputs, targets=all_targets, weights=all_weights)
+    return all_sample_ids, all_raw_outputs, all_targets # scores
 
 
 def train(model: torch.nn.Module, task_definition: TaskDefinition, early_stopping_target_id: str,

@@ -67,7 +67,7 @@ optional arguments:
                         directory to store predictions (and ROC AUC)
   -a, --activations     compute activations instead of discrete predictions
   -m MODEL, --model MODEL
-                        model to be used for prediction
+                        model to be used for thresholded_data
   -z PICKLE, --pickle PICKLE
                         fold definitions (pickle-file)
   -w WORKER, --worker WORKER

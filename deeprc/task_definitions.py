@@ -56,7 +56,7 @@ class Target(torch.nn.Module):
         raise NotImplementedError("Please add your own get_targets() method to your Target class")
 
     def activation_function(self, raw_outputs: torch.Tensor) -> torch.Tensor:
-        """Activation function to apply to network outputs to create prediction
+        """Activation function to apply to network outputs to create thresholded_data
         
         Parameters
         ----------
@@ -125,7 +125,7 @@ class BinaryTarget(Target):
         
         Network output for this task will be 1 output feature, activated using a sigmoid output function.
         Network loss is computed using `torch.nn.BCEWithLogitsLoss`.
-        Scores are computed using 0.5 as prediction threshold.
+        Scores are computed using 0.5 as thresholded_data threshold.
         
         Targets are combined via `TaskDefinition`. The DeepRC model will be trained on the targets listed in
         `TaskDefinition`.
@@ -174,7 +174,7 @@ class BinaryTarget(Target):
         return np.asarray(self.true_class_value[None] == dataframe[self.column_name].values[:, None], dtype=float)
 
     def activation_function(self, raw_outputs: torch.Tensor) -> torch.Tensor:
-        """Sigmoid activation function to apply to network outputs to create prediction
+        """Sigmoid activation function to apply to network outputs to create thresholded_data
         
         Parameters
         ----------
@@ -298,7 +298,7 @@ class MulticlassTarget(Target):
                           dtype=float)
 
     def activation_function(self, raw_outputs: torch.Tensor) -> torch.Tensor:
-        """Softmax activation function to apply to network outputs to create prediction
+        """Softmax activation function to apply to network outputs to create thresholded_data
         
         Parameters
         ----------
@@ -387,7 +387,7 @@ class RegressionTarget(Target):
                 - self.normalization_mean) / self.normalization_std
 
     def activation_function(self, raw_outputs: torch.Tensor) -> torch.Tensor:
-        """Linear activation function to apply to network outputs to create prediction (does not affect loss function!)
+        """Linear activation function to apply to network outputs to create thresholded_data (does not affect loss function!)
         
         Parameters
         ----------

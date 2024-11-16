@@ -132,7 +132,7 @@ def console_entry():
         r'-v', r'--amsgrad', help=r'use AMSGrad version of Adam', action=r'store_true')
     train_cmd.add_argument(
         r'-p', r'--epsilon', type=float, help=r'epsilon to use for numerical stability', default=1e-8)
-    # ...prediction.
+    # ...thresholded_data.
     predict_parser = arg_sub_parsers.add_parser(
         name=r'predict', help=r'predict cancer using pre-trained model')
     predict_parser.add_argument(
@@ -142,7 +142,7 @@ def console_entry():
     predict_parser.add_argument(
         r'-a', r'--activations', action=r'store_true', help=r'compute activations instead of discrete predictions')
     predict_parser.add_argument(
-        r'-m', r'--model', type=str, help=r'model to be used for prediction', required=True)
+        r'-m', r'--model', type=str, help=r'model to be used for thresholded_data', required=True)
     predict_parser.add_argument(
         r'-z', r'--pickle', type=str, help=r'fold definitions (pickle-file)', default=None)
     predict_parser.add_argument(

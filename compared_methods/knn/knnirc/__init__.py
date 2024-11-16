@@ -967,7 +967,7 @@ class KNNBaseline(object):
 def main():
     # Initialise argument parsers for ...
     arg_parser = argparse.ArgumentParser(
-        description=r'KNN baseline model for disease status prediction')
+        description=r'KNN baseline model for disease status thresholded_data')
     arg_sub_parsers = arg_parser.add_subparsers(
         dest=r'mode', required=True)
     # ... data set adaption.
@@ -1020,7 +1020,7 @@ def main():
         r'-j', r'--json', type=str, help=r'hyperparameters to use (json)')
     train_parser_main_group.add_argument(
         r'-n', r'--neighbours', type=int, help=r'neighbours parameter of the KNN')
-    # ...prediction.
+    # ...thresholded_data.
     predict_parser = arg_sub_parsers.add_parser(
         name=r'predict', help=r'predict disease status using pre-trained model')
     predict_parser.add_argument(
@@ -1030,7 +1030,7 @@ def main():
     predict_parser.add_argument(
         r'-a', r'--activations', action=r'store_true', help=r'compute activations instead of discrete predictions')
     predict_parser.add_argument(
-        r'-m', r'--model', type=str, help=r'model to be used for prediction', required=True)
+        r'-m', r'--model', type=str, help=r'model to be used for thresholded_data', required=True)
     predict_parser.add_argument(
         r'-z', r'--pickle', type=str, help=r'fold definitions (pickle-file)', default=None)
     predict_parser.add_argument(

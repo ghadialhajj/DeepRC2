@@ -243,7 +243,7 @@ class OutputNetwork(nn.Module):
         
         Returns
         ---------
-        prediction: torch.Tensor
+        thresholded_data: torch.Tensor
             Prediction as tensor of shape (n_samples, n_output_features).
         """
         predictions = self.output_nn(inputs)
